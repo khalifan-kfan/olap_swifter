@@ -170,3 +170,29 @@ olap_swifter/
    distributions on the warehouse match the raw file within float tolerance.
 4. **No fan-out inflation.** Joining fact tables through the visit spine does
    not multiply rows or overstate totals.
+
+---
+
+## TODO: OCR Pipeline Implementation & AI Misuse Risks
+
+### 1. Implementing the OCR Pipeline (`ocr/` & `privacy/`)
+The repository contains scaffolding for `TesseractRunner`, `preprocessor.py`, and `OfflinePresidioAnonymizer`. To bring physical paper form digitization into production:
+- **Image Preprocessing (`ocr/preprocessor.py`)**: Implement deskewing, contrast enhancement (CLAHE), adaptive binarization, and shadow removal to handle degraded paper records from clinic settings.
+- **Structured Form Layout Parsing**: Replace raw text dump with zone/table detection (bounding box segmentation for Patient Header, Diagnosis blocks, and AST Lab sensitivity grids).
+- **Automated Redaction & Privacy (`privacy/presidio_engine.py`)**: Gate raw OCR outputs through local Presidio de-identification to strip direct identifiers (patient names, phone numbers, village addresses) before staging.
+- **Pipeline Integration**: Ingest sanitized OCR output directly into the DuckDB staging table (`raw_clinical_records`) to seamlessly trigger the dynamic constellation builder.
+
+### 2. Risks of AI Misuse & Clinical Governance
+Automating medical digitization and OLAP aggregation with AI introduces high-stakes risks that require strict operational guardrails:
+- **Dosage & Metric Hallucinations (Silent Data Corruption)**:
+  - OCR and generative models can easily misread or hallucinate handwritten decimals and dosages (e.g., misreading `0.5g` as `5g`, or flipping AST interpretation `S` to `R`). In surveillance warehouses, this produces dangerously distorted resistance curves.
+  - *Guardrail*: Always enforce deterministic regex range checks (e.g., physiological vital boundaries, standard antimicrobial dosage tiers) and require human-in-the-loop (HITL) verification for low-confidence reads.
+- **Misapplication to Real-Time Clinical Decision Support**:
+  - `olap_swifter` is designed for **retrospective epidemiological research and health system reporting**, NOT real-time diagnostic triage or autonomous drug prescribing.
+  - *Guardrail*: Outputs must never be fed directly into active bedside treatment algorithms without direct clinician review.
+- **Re-Identification of Vulnerable Populations**:
+  - Even without direct names, high-dimensional OLAP slicing combining facility + rare diagnosis + exact visit date + age group can re-identify marginalized patients (e.g., HIV, MDR-TB, stigmatized conditions).
+  - *Guardrail*: Enforce k-anonymity thresholds ($k \ge 5$) on cube rollups and suppress small cell counts before exporting reports.
+- **Adversarial Input & Prompt Injection**:
+  - Scanned clinical notes containing malicious or unintended text instructions could compromise downstream LLM-based orchestrators.
+  - *Guardrail*: Treat all OCR output strictly as raw data payloads; never pass raw scanned text directly as system prompt instructions.
