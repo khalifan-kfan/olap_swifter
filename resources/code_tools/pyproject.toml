@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "olap-swifter"
+version = "0.1.0"
+description = "Orchestrated Medical OLAP Engine, Clinical Record Digitizer, and Deep Cube Slicer"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Antigravity Pair Programmer" }
+]
+dependencies = [
+    "duckdb>=0.10.0",
+    "pydantic>=2.5.0",
+    "pandas>=2.0.0",
+    "networkx>=3.1",
+    "pytesseract>=0.3.10",
+    "Pillow>=10.0.0",
+    "presidio-analyzer>=2.2.354",
+    "presidio-anonymizer>=2.2.354",
+    "typer>=0.9.0",
+    "rich>=13.7.0",
+    "playwright>=1.40.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0"
+]
+
+[project.scripts]
+olap-swifter = "olap_swifter.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
