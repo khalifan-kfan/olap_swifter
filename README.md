@@ -196,3 +196,10 @@ Automating medical digitization and OLAP aggregation with AI introduces high-sta
 - **Adversarial Input & Prompt Injection**:
   - Scanned clinical notes containing malicious or unintended text instructions could compromise downstream LLM-based orchestrators.
   - *Guardrail*: Treat all OCR output strictly as raw data payloads; never pass raw scanned text directly as system prompt instructions.
+
+### 3. Docker Compose Setup for the Skills (Next Iteration)
+Testing the skill today depends on a local `.venv`, a system DuckDB, and the machine-specific paths in `HOW_TO_RUN.md`. That makes results hard to reproduce across contributors and CI. For the next iterations:
+- **`docker-compose.yml` at the repo root**: One service that installs `resources/code_tools`, mounts `resources/datasets/` and `resources/clinical_warehouse.duckdb` as volumes, and exposes the `olap_swifter.cli` entry point (`build`, `profile`, `review`).
+- **One-command test run**: `docker compose run --rm olap pytest -v` should execute the full suite against a clean container, so sub-agents in `TEST.md` can be run without touching the host environment.
+- **Pin the toolchain**: Lock Python, DuckDB and (later) Tesseract/Presidio versions in the image so the OCR pipeline from item 1 can be tested in the same container.
+- **Update `HOW_TO_RUN.md`**: Replace the absolute `/Users/...` paths with container paths and add a "Run with Docker" section alongside the `.venv` instructions.
