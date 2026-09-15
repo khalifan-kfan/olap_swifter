@@ -1,5 +1,5 @@
 # OLAP Swifter (`olap_swifter`)
-
+``` Public on github at https://github.com/khalifan-kfan/olap_swifter ```
 > An Antigravity (Gemini) skill that turns flat, messy clinical CSV files into a
 > medical OLAP data warehouse  and then proves the warehouse still tells the
 > truth.
