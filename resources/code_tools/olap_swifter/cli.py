@@ -31,13 +31,14 @@ def build(
     csv: Optional[str] = typer.Option(None, "--csv", help="Path to input raw clinical CSV file"),
     schema: Optional[str] = typer.Option(None, help="Registered schema id (default: clinical_visit, or the matched schema for --csv)"),
     source: Optional[str] = typer.Option(None, help="Source name for --csv (use the dataset name)"),
+    force: bool = typer.Option(False, "--force", help="Load despite failed gates (requires user agreement)"),
     as_json: bool = typer.Option(False, "--json", help="Print a counts-only summary for the orchestrating skill"),
 ):
     """Loads dummy data (or a CSV that fits a registered schema) and runs the full pipeline."""
     orch = MedicalOLAPOrchestrator()
     try:
         if csv:
-            data_stats = orch.ingest_csv_dataset(csv, schema_id=schema, source=source)
+            data_stats = orch.ingest_csv_dataset(csv, schema_id=schema, source=source, force=force)
         else:
             data_stats = orch.ingest_synthetic_dataset(num_visits=visits, schema_id=schema or "clinical_visit")
         res = orch.run_full_pipeline()

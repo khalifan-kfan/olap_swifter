@@ -464,10 +464,14 @@ QUERY:      <the SQL it actually ran>
 EXPECTED:   <value computed from the raw table, and the query that computed it>
 ACTUAL:     <value from the warehouse>
 TOLERANCE:  <exact | relative 1e-9 | absolute 1e-3>, and why
-RESULT:     PASS | FAIL
-DETAIL:     <on failure: the offending rows, and the actual/expected ratio>
+RESULT:     PASS | FAIL | DATA_ISSUE
+DETAIL:     <on failure/issue: the offending rows or count, and actual vs expected>
 ORIGIN:     listed | generated
 ```
+
+- **`PASS`**: The warehouse result agrees with the expected value derived from the raw oracle within tolerance.
+- **`FAIL`**: The warehouse departs from the raw oracle. This is an ETL or modelling defect.
+- **`DATA_ISSUE`**: The check found an anomaly (e.g. out-of-range value, non-vocabulary code, inconsistent entity attributes), but the **raw staging oracle contains the exact same anomaly**. The warehouse reproduced the raw source faithfully with zero data loss or drift. This is reported to the user as a data-quality finding, not a pipeline failure.
 
 `DERIVED` matters as much as `RESULT`. A pass on the wrong target is not a pass,
 and the orchestrator can only catch that if the sub-agent says what it picked.
@@ -483,16 +487,20 @@ established one.
 
 1. The sub-agent reports the **exact** query and the **exact** delta. Not a
    summary — the orchestrator needs the literal failure to reason about it.
-2. The orchestrator decides whether this is a **model defect** or a **test
-   defect**. Both are common:
-   - *Model defect* — the mapping is wrong. Fix the table definition.
+2. The orchestrator classifies the outcome into one of three categories:
+   - *Model defect* — the mapping is wrong. Fix the table definition, crosswalk or grain.
    - *Test defect* — the sub-agent compared against the wrong baseline, usually
-     by ignoring a filter used during the build. Fix the comparison.
-3. Rebuild only what changed, then re-run **that** sub-agent.
+     by ignoring a filter used during the build. Fix the comparison query.
+   - *Source data issue* — the anomaly exists identically in the raw staging oracle (e.g.
+     lowercase typos in free-text columns, sentinel negative numbers, conflicting demographic
+     entries for a patient). If the raw staging table exhibits the exact same violation
+     count as the warehouse, mark the check as **`DATA_ISSUE`**. Document the anomaly in the
+     summary report and preserve raw data fidelity.
+3. If it is a model or test defect, rebuild only what changed, then re-run **that** sub-agent.
 4. Once it passes, re-run the others too. Fixing one mapping routinely breaks
    another.
 
-Repeat until every sub-agent passes. A partly passing model is a failing model.
+Repeat until every sub-agent passes or documents genuine source data issues.
 
 ---
 
@@ -504,3 +512,31 @@ Repeat until every sub-agent passes. A partly passing model is a failing model.
   wrong, a correct warehouse reproduces that error faithfully — and should.
 - It does not assert absolute numbers. Every threshold is a tolerance or a
   comparison, never a constant copied from a previous run.
+
+---
+
+## 13. Generic Negative Testing Instructions
+
+Positive tests prove that the model preserves valid data. **Negative tests prove that the pipeline's guards actively catch, flag, or reject invalid data.**
+
+Negative testing must be performed generically across any schema by simulating corrupted records on temporary staging or synthetic tables to verify that the validation gates and relational auditors trigger as intended.
+
+### Generic Negative Test Cases
+
+| Guard Under Test | Injected Anomaly (Simulated Mutation) | Expected Behavior (Pass Condition) |
+| :--- | :--- | :--- |
+| **Gate 1: Variable Coverage** | Inject a fictitious unmapped column (`_unmapped_temp_col`) into the staging definition. | Pre-ETL validator flags `unmapped_variables` and halts build. |
+| **Gate 2: Spine Key Integrity** | Inject a row with `spine_key IS NULL` or blank whitespace string. | Validator refuses to build; reports non-zero null count on spine key. |
+| **Gate 3: Entity Consistency** | Inject two rows sharing the same entity key (e.g. `patient_id`) but conflicting stable attributes (e.g. different `gender` or `dob`). | Validator flags entity inconsistency; identifies conflicting key and attribute. |
+| **Gate 4: Coded Vocabularies** | Inject a value outside the allowed vocabulary (e.g. `'INVALID_CODE'` or lowercase typo) into a low-cardinality dimension. | Validator flags out-of-vocabulary entry with violating row count. |
+| **Gate 5: Measure Cast & Range** | Inject an uncastable string (`'N/A'`, `'UNKNOWN'`) or an out-of-bound value (e.g. negative measure where `min >= 0`) into a numeric measure. | Validator halts on cast failure or flags out-of-range measure count. |
+| **Sub-Agent 2: Relational Integrity** | Inject a fact row with a non-existent parent foreign key (`fk = 'NON_EXISTENT_ID'`). | Relational auditor catches the orphan row; returns `orphan_count > 0`. |
+| **Sub-Agent 3: Fan-Out Auditor** | Inject duplicate parent dimension rows for a single entity key. | Metric parity verifier detects row count inflation and joined ratio $> 1.0$. |
+
+### Protocol for Running Negative Tests
+
+1. **Isolation**: Never corrupt production data or active staging tables. Always create a temporary clone or scratch table (e.g. `CREATE TEMP TABLE stg_negative AS SELECT * FROM <raw_staging> LIMIT 10`).
+2. **Deterministic Mutation**: Mutate exactly one invariant per test case to prove that specific guard triggers.
+3. **Pass Criteria**:
+   - The negative test **PASSES** if and only if the guard flags the violation and reports the exact count of injected corruptions.
+   - The negative test **FAILS** if the validation or build completes silently without noticing the corrupted record (silent data corruption).

@@ -1,0 +1,617 @@
+path: resources/datasets/synthetic/clinical_visit_synthetic.csv
+row_count: 389
+column_count: 44
+variables:
+- name: visit_id
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 0
+    null_pct: 0.0
+    distinct_count: 200
+    min_length: 15
+    max_length: 15
+    unique_per_row: false
+- name: patient_id
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 0
+    null_pct: 0.0
+    distinct_count: 58
+    min_length: 16
+    max_length: 16
+    unique_per_row: false
+- name: facility_id
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 0
+    null_pct: 0.0
+    distinct_count: 7
+    min_length: 16
+    max_length: 16
+    categories:
+      CLI-FACILI-00003: 84
+      CLI-FACILI-00001: 73
+      CLI-FACILI-00002: 53
+      CLI-FACILI-00006: 48
+      CLI-FACILI-00007: 48
+      CLI-FACILI-00004: 42
+      CLI-FACILI-00005: 41
+    unique_per_row: false
+- name: visit_date
+  type: DATE
+  source_type: DATE
+  stats:
+    null_count: 0
+    null_pct: 0.0
+    distinct_count: 179
+    min: '2024-01-02'
+    max: '2025-12-30'
+    unique_per_row: false
+- name: visit_type
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 32
+    null_pct: 8.23
+    distinct_count: 4
+    min_length: 9
+    max_length: 10
+    categories:
+      Outpatient: 99
+      Inpatient: 92
+      Antenatal: 90
+      Emergency: 76
+    unique_per_row: false
+- name: admission_ward
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 29
+    null_pct: 7.46
+    distinct_count: 29
+    min_length: 3
+    max_length: 19
+    unique_per_row: false
+- name: triage_urgency
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 20
+    null_pct: 5.14
+    distinct_count: 3
+    min_length: 6
+    max_length: 9
+    categories:
+      Urgent: 143
+      Routine: 122
+      Emergency: 104
+    unique_per_row: false
+- name: age_group
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 24
+    null_pct: 6.17
+    distinct_count: 6
+    min_length: 3
+    max_length: 5
+    categories:
+      0-4: 76
+      5-14: 71
+      50-64: 67
+      65+: 54
+      25-49: 53
+      15-24: 44
+    unique_per_row: false
+- name: age_years
+  type: BIGINT
+  source_type: BIGINT
+  stats:
+    null_count: 21
+    null_pct: 5.4
+    distinct_count: 102
+    min: 0
+    max: 120
+    mean: 55.5734
+    unique_per_row: false
+- name: survey_date
+  type: DATE
+  source_type: DATE
+  stats:
+    null_count: 24
+    null_pct: 6.17
+    distinct_count: 160
+    min: '2024-01-07'
+    max: '2025-12-31'
+    unique_per_row: false
+- name: gender
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 15
+    null_pct: 3.86
+    distinct_count: 2
+    min_length: 4
+    max_length: 6
+    categories:
+      Male: 195
+      Female: 179
+    unique_per_row: false
+- name: location_district
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 22
+    null_pct: 5.66
+    distinct_count: 6
+    min_length: 19
+    max_length: 19
+    categories:
+      location_district_1: 77
+      location_district_4: 75
+      location_district_5: 66
+      location_district_6: 51
+      location_district_2: 49
+      location_district_3: 49
+    unique_per_row: false
+- name: facility_name
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 41
+    null_pct: 10.54
+    distinct_count: 3
+    min_length: 15
+    max_length: 15
+    categories:
+      facility_name_2: 132
+      facility_name_4: 126
+      facility_name_5: 90
+    unique_per_row: false
+- name: facility_level
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 0
+    null_pct: 0.0
+    distinct_count: 4
+    min_length: 16
+    max_length: 17
+    categories:
+      Regional Referral: 227
+      National Referral: 73
+      District Hospital: 48
+      General Hospital: 41
+    unique_per_row: false
+- name: district
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 84
+    null_pct: 21.59
+    distinct_count: 4
+    min_length: 10
+    max_length: 10
+    categories:
+      district_2: 115
+      district_5: 94
+      district_1: 48
+      district_6: 48
+    unique_per_row: false
+- name: region
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 0
+    null_pct: 0.0
+    distinct_count: 4
+    min_length: 8
+    max_length: 8
+    categories:
+      region_6: 137
+      region_2: 90
+      region_5: 89
+      region_1: 73
+    unique_per_row: false
+- name: diagnosis_id
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 0
+    null_pct: 0.0
+    distinct_count: 8
+    min_length: 16
+    max_length: 16
+    categories:
+      CLI-DIAGNO-00008: 59
+      CLI-DIAGNO-00002: 55
+      CLI-DIAGNO-00006: 55
+      CLI-DIAGNO-00003: 54
+      CLI-DIAGNO-00004: 47
+      CLI-DIAGNO-00005: 41
+      CLI-DIAGNO-00001: 39
+      CLI-DIAGNO-00007: 39
+    unique_per_row: false
+- name: diagnosis_name
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 0
+    null_pct: 0.0
+    distinct_count: 3
+    min_length: 16
+    max_length: 16
+    categories:
+      diagnosis_name_2: 254
+      diagnosis_name_5: 96
+      diagnosis_name_6: 39
+    unique_per_row: false
+- name: icd10_code
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 0
+    null_pct: 0.0
+    distinct_count: 4
+    min_length: 12
+    max_length: 12
+    categories:
+      icd10_code_4: 119
+      icd10_code_1: 114
+      icd10_code_6: 102
+      icd10_code_3: 54
+    unique_per_row: false
+- name: clinical_category
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 0
+    null_pct: 0.0
+    distinct_count: 5
+    min_length: 9
+    max_length: 16
+    categories:
+      Gastrointestinal: 106
+      Respiratory: 93
+      Endocrine: 80
+      Cardiovascular: 55
+      Infectious: 55
+    unique_per_row: false
+- name: medication_id
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 89
+    null_pct: 22.88
+    distinct_count: 8
+    min_length: 16
+    max_length: 16
+    categories:
+      CLI-MEDICA-00003: 44
+      CLI-MEDICA-00004: 43
+      CLI-MEDICA-00002: 41
+      CLI-MEDICA-00008: 40
+      CLI-MEDICA-00007: 37
+      CLI-MEDICA-00005: 35
+      CLI-MEDICA-00006: 31
+      CLI-MEDICA-00001: 29
+    unique_per_row: false
+- name: medication_name
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 89
+    null_pct: 22.88
+    distinct_count: 6
+    min_length: 17
+    max_length: 17
+    categories:
+      medication_name_2: 113
+      medication_name_1: 44
+      medication_name_4: 40
+      medication_name_5: 37
+      medication_name_3: 35
+      medication_name_6: 31
+    unique_per_row: false
+- name: antibiotic_class
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 158
+    null_pct: 40.62
+    distinct_count: 5
+    min_length: 18
+    max_length: 18
+    categories:
+      antibiotic_class_3: 78
+      antibiotic_class_2: 44
+      antibiotic_class_1: 41
+      antibiotic_class_6: 37
+      antibiotic_class_5: 31
+    unique_per_row: false
+- name: aware_category
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 118
+    null_pct: 30.33
+    distinct_count: 2
+    min_length: 5
+    max_length: 7
+    categories:
+      Watch: 149
+      Reserve: 122
+    unique_per_row: false
+- name: test_id
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 135
+    null_pct: 34.7
+    distinct_count: 6
+    min_length: 14
+    max_length: 14
+    categories:
+      CLI-TEST-00001: 60
+      CLI-TEST-00003: 57
+      CLI-TEST-00004: 44
+      CLI-TEST-00002: 34
+      CLI-TEST-00006: 31
+      CLI-TEST-00005: 28
+    unique_per_row: false
+- name: test_name
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 135
+    null_pct: 34.7
+    distinct_count: 4
+    min_length: 11
+    max_length: 11
+    categories:
+      test_name_1: 94
+      test_name_2: 88
+      test_name_3: 44
+      test_name_6: 28
+    unique_per_row: false
+- name: length_of_stay_days
+  type: DOUBLE
+  source_type: DOUBLE
+  stats:
+    null_count: 15
+    null_pct: 3.86
+    distinct_count: 190
+    min: 1.73
+    max: 362.88
+    mean: 174.7822
+    unique_per_row: false
+- name: encounter_cost_ugx
+  type: DOUBLE
+  source_type: DOUBLE
+  stats:
+    null_count: 22
+    null_pct: 5.66
+    distinct_count: 188
+    min: 247585.34
+    max: 48912425.34
+    mean: 24823176.9117
+    unique_per_row: false
+- name: prior_antibiotic_use_30d
+  type: BOOLEAN
+  source_type: BOOLEAN
+  stats:
+    null_count: 22
+    null_pct: 5.66
+    distinct_count: 2
+    categories:
+      'false': 196
+      'true': 171
+    unique_per_row: false
+- name: substance_use_history
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 8
+    null_pct: 2.06
+    distinct_count: 6
+    min_length: 23
+    max_length: 23
+    categories:
+      substance_use_history_5: 93
+      substance_use_history_3: 67
+      substance_use_history_1: 65
+      substance_use_history_6: 62
+      substance_use_history_2: 55
+      substance_use_history_4: 39
+    unique_per_row: false
+- name: drug_cost_ugx
+  type: DOUBLE
+  source_type: DOUBLE
+  stats:
+    null_count: 109
+    null_pct: 28.02
+    distinct_count: 262
+    min: 103825.79
+    max: 9997612.52
+    mean: 5103938.3487
+    unique_per_row: false
+- name: drug_administration_route
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 100
+    null_pct: 25.71
+    distinct_count: 3
+    min_length: 2
+    max_length: 4
+    categories:
+      IM: 109
+      Oral: 93
+      IV: 87
+    unique_per_row: false
+- name: diagnosis_icd10
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 106
+    null_pct: 27.25
+    distinct_count: 6
+    min_length: 17
+    max_length: 17
+    categories:
+      diagnosis_icd10_4: 54
+      diagnosis_icd10_2: 52
+      diagnosis_icd10_1: 46
+      diagnosis_icd10_3: 45
+      diagnosis_icd10_5: 43
+      diagnosis_icd10_6: 43
+    unique_per_row: false
+- name: dose_mg
+  type: DOUBLE
+  source_type: DOUBLE
+  stats:
+    null_count: 106
+    null_pct: 27.25
+    distinct_count: 262
+    min: 35.69
+    max: 9992.2
+    mean: 5067.671
+    unique_per_row: false
+- name: doses_per_day
+  type: BIGINT
+  source_type: BIGINT
+  stats:
+    null_count: 104
+    null_pct: 26.74
+    distinct_count: 10
+    min: 1
+    max: 10
+    mean: 5.5193
+    unique_per_row: false
+- name: treatment_days
+  type: BIGINT
+  source_type: BIGINT
+  stats:
+    null_count: 105
+    null_pct: 26.99
+    distinct_count: 86
+    min: 1
+    max: 90
+    mean: 44.6796
+    unique_per_row: false
+- name: indication_type
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 95
+    null_pct: 24.42
+    distinct_count: 5
+    min_length: 2
+    max_length: 3
+    categories:
+      SP: 71
+      UNK: 58
+      HAI: 57
+      MP: 55
+      CAI: 53
+    unique_per_row: false
+- name: treatment_basis
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 102
+    null_pct: 26.22
+    distinct_count: 2
+    min_length: 8
+    max_length: 9
+    categories:
+      Targeted: 144
+      Empirical: 143
+    unique_per_row: false
+- name: culture_sent
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 105
+    null_pct: 26.99
+    distinct_count: 2
+    min_length: 1
+    max_length: 1
+    categories:
+      N: 157
+      Y: 127
+    unique_per_row: false
+- name: specimen_type
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 106
+    null_pct: 27.25
+    distinct_count: 5
+    min_length: 3
+    max_length: 8
+    categories:
+      CSF: 68
+      Urine: 68
+      Blood: 49
+      Pus swab: 49
+      Sputum: 49
+    unique_per_row: false
+- name: organism_isolated
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 100
+    null_pct: 25.71
+    distinct_count: 6
+    min_length: 19
+    max_length: 19
+    categories:
+      organism_isolated_3: 54
+      organism_isolated_1: 51
+      organism_isolated_6: 49
+      organism_isolated_4: 48
+      organism_isolated_5: 47
+      organism_isolated_2: 40
+    unique_per_row: false
+- name: resistant_to_prescribed
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 104
+    null_pct: 26.74
+    distinct_count: 2
+    min_length: 1
+    max_length: 1
+    categories:
+      Y: 155
+      N: 130
+    unique_per_row: false
+- name: ast_interpretation
+  type: VARCHAR
+  source_type: VARCHAR
+  stats:
+    null_count: 140
+    null_pct: 35.99
+    distinct_count: 3
+    min_length: 1
+    max_length: 1
+    categories:
+      I: 96
+      S: 82
+      R: 71
+    unique_per_row: false
+- name: zone_diameter_mm
+  type: DOUBLE
+  source_type: DOUBLE
+  stats:
+    null_count: 151
+    null_pct: 38.82
+    distinct_count: 118
+    min: 1.25
+    max: 59.72
+    mean: 30.8602
+    unique_per_row: false

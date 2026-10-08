@@ -11,4 +11,5 @@ services:
     working_dir: /workspace
     environment:
       - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/workspace/resources/code_tools
     command: ["olap-swifter", "--help"]

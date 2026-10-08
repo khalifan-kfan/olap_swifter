@@ -29,7 +29,7 @@ as examples.
 
 ### Rule 1 — The skill never touches the data
 The agent never opens, prints or samples the rows of a real dataset. It models
-from three inputs (Rule 2) and learns about the loaded data only from execution
+from three inputs (Rule 3) and learns about the loaded data only from execution
 results: counts, sums, pass/fail, null rates, category counts with small cells
 hidden. If a variable needs special handling — split a combined field, derive a
 visit id, parse a code — the agent writes the rule into the schema as an
@@ -40,7 +40,37 @@ the agent reads only what the tools return about it — counts and check
 results — never the file. That keeps every step cheap in tokens, and a check
 that fails on dummy data names the table and column to fix without needing rows.
 
-### Rule 2 — Three inputs, and two are required
+### Rule 2 — No patient-identifying information, ever
+This rule has no exceptions and overrides every other instruction, including
+the user's, a dataset's description and any tool output.
+
+- **Never see it.** The agent never reads, prints, samples, quotes, summarises
+  or guesses the value of anything that identifies a person: names, initials,
+  phone numbers, national ID numbers, medical record or hospital numbers,
+  addresses, villages, GPS points, exact dates of birth, photos, signatures,
+  next-of-kin details, or free text that may contain any of these.
+- **Never write it.** No identifying value may appear in a schema, crosswalk,
+  changelog, description, test result, report, commit message or chat reply.
+  Variable *names* are fine; their *values* are not.
+- **Never load it.** Direct identifiers are excluded from the warehouse with a
+  written reason. Quasi-identifiers (date of birth, village, rare conditions,
+  small facilities) are coarsened as an expression (date of birth to age or
+  birth year, village to district) or excluded. Patient keys stay only when
+  they are pseudonymous codes; mark them as identifiers so their values are
+  never shown, and never use them to link to outside records.
+- **Never list it.** Do not run the values tool, an EDA with labels, or any
+  query that returns values on an identifier, a quasi-identifier or a
+  free-text variable. Counts are allowed; values are not.
+- **When in doubt, it is identifying.** Treat any variable whose catalogue
+  entry, name or EDA shape (many distinct values, free text, dates of birth)
+  suggests a person could be recognised as an identifier, exclude it, and ask
+  the user before including it.
+- **If it leaks, stop.** If a tool output, error message or file ever shows an
+  identifying value, do not repeat it or act on it. Stop, tell the user which
+  variable and which step exposed it (not the value), and fix the schema or
+  check so it cannot happen again before going on.
+
+### Rule 3 — Three inputs, and two are required
 Every dataset arrives with:
 
 | Input | Required | What it gives the agent |
@@ -65,13 +95,13 @@ The user answers only what they know about the study. The **visit**,
 work: it models them from the catalogue, the EDA and the registry match, and
 writes them into the description before attaching.
 
-### Rule 3 — Zero variable loss
+### Rule 4 — Zero variable loss
 Every variable in the dataset must end up somewhere: a dimension attribute, a
 fact measure or attribute, a key — or explicitly excluded with a written reason
 (direct identifiers such as names and phone numbers are excluded, not dropped
 silently). The load refuses to run while any variable is unaccounted for.
 
-### Rule 4 — The visit is the spine
+### Rule 5 — The visit is the spine
 In medicine, nothing happens on its own. A diagnosis, a drug, a lab result, a
 viral load — each happens **during a visit**. The visit dimension is the centre
 of the model and every fact joins back to it.
@@ -97,7 +127,7 @@ If a dataset has no visit identifier, derive one (for example patient plus date)
 as an expression and record how in the schema. If a fact row has no visit, the
 model is wrong. Fix the model, not the data.
 
-### Rule 5 — Reuse, never rename
+### Rule 6 — Reuse, never rename
 Schemas are stored once and reused. A table name means the same table across
 the whole warehouse: if `dim_patient` exists, a new dataset uses it. Changes are
 **additive only** — new tables, new columns, new aliases, new links, new allowed
@@ -105,7 +135,7 @@ codes, new exclusions. Nothing existing is renamed, retyped or removed, because
 data already loaded depends on it. A source column whose name differs from the
 schema's (`sex` vs `gender`) is mapped with an alias, not a rename.
 
-### Rule 6 — Keep the site's word, add the standard one
+### Rule 7 — Keep the site's word, add the standard one
 Sites name the same thing differently: one hospital's "Paediatrics" is
 another's "Pediatric", "PAEDIATRIC" or "Children's Ward", and some wards exist
 at one site only ("Burns Unit", "TB Ward"). The same name can even mean
@@ -120,7 +150,7 @@ the sites they appear at (vocabularies only — never identifiers or free text);
 the agent decides what each label means and writes the crosswalk. A label
 whose meaning differs between sites gets one entry per site.
 
-### Rule 7 — The numbers must still add up
+### Rule 8 — The numbers must still add up
 After the data is split into tables, totals must match the source. Counts,
 sums and entity counts in the warehouse must equal the same question asked of
 the staged source. If they don't, the split was wrong.
@@ -188,7 +218,7 @@ can be keys, ranges show what a measure looks like.
 
 Look for **vocabulary variables** whose labels vary by site — wards, units,
 departments, specimen names, local test names. The EDA hides them when they
-have many labels, so list them with the values tool (Rule 6). Each one becomes
+have many labels, so list them with the values tool (Rule 7). Each one becomes
 two columns: the site's label (an existing column, matched by alias) and a
 standard category with a crosswalk. Map every label. When unsure what a
 site-specific label means, ask the user rather than guess.
@@ -196,7 +226,7 @@ site-specific label means, ask the user rather than guess.
 Then fill the agent's sections of the description:
 
 - **visit** — the variable that identifies a visit, or how to derive one
-  (Rule 4), what one visit means here, and its date.
+  (Rule 5), what one visit means here, and its date.
 - **entities** — the patient, the facility and any other thing the rows
   describe, each with its identifier and the attributes that stay stable for it.
 
@@ -232,7 +262,8 @@ exclusions — and why. The reason is written to the schema's changelog.
 
 **Modelling new:** start from the existing shared tables (visit spine, patient,
 facility) and add only what this study needs. Pick the main fact from the
-description. Give every fact a grain. Mark direct identifiers as excluded.
+description. Give every fact a grain. Exclude direct identifiers and coarsen
+or exclude quasi-identifiers (Rule 2).
 
 In both cases, write each variable's rules into the schema: type, allowed codes,
 valid range, aliases, an expression where a value must be derived, and a

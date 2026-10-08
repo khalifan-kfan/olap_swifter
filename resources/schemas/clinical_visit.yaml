@@ -1,109 +1,484 @@
 schema_id: clinical_visit
 title: General clinical visit warehouse
-study: >
-  Routine facility encounters: who was seen, where and when, what they were
-  diagnosed with, what was prescribed, which tests were run and the vitals
-  taken. The encounter itself (length of stay, cost) is the main event.
+study: 'Routine facility encounters: who was seen, where and when, what they were diagnosed with, what
+  was prescribed, which tests were run and the vitals taken. The encounter itself (length of stay, cost)
+  is the main event.
+
+  '
 spine:
   table: dim_visit
   key: visit_id
 main_fact: fact_encounters
+datasets:
+  amu_inpatient_survey:
+    catalogue: resources/inputs/amu_inpatient_survey/catalogue
+    eda: resources/inputs/amu_inpatient_survey/eda
+    main_fact: fact_prescriptions
+    attached: '2026-10-08'
+    variables: 27
+    columns_fed: 27
+    description: resources/inputs/amu_inpatient_survey/description.yaml
 changelog:
 - '2026-10-08: seeded from the original hard-coded constellation and sample_wide_clinical.csv'
+- '2026-10-08: AMU inpatient survey: admission visit details, medication AWaRe categories, prescription
+  dosage and microbiology (+column dim_visit.age_years; +column dim_visit.survey_date; +column dim_medication.aware_category;
+  +column fact_prescriptions.diagnosis_icd10; +column fact_prescriptions.dose_mg; +column fact_prescriptions.doses_per_day;
+  +column fact_prescriptions.treatment_days; +column fact_prescriptions.indication_type; +column fact_prescriptions.treatment_basis;
+  +column fact_prescriptions.culture_sent; +column fact_prescriptions.specimen_type; +column fact_prescriptions.organism_isolated;
+  +column fact_prescriptions.resistant_to_prescribed; +aliases dim_facility.facility_id; +aliases dim_facility.facility_level;
+  +aliases dim_visit.visit_id; +aliases dim_visit.visit_date; +aliases dim_medication.medication_id; +aliases
+  dim_medication.medication_name; +aliases dim_medication.antibiotic_class; +codes dim_facility.facility_level;
+  +excluded patient_name)'
+excluded_variables:
+  patient_name: direct identifier
 tables:
   dim_patient:
     kind: dimension
     description: One row per person.
     key: patient_id
-    synthetic: {rows: 60}
+    synthetic:
+      rows: 60
     columns:
-      patient_id: {type: VARCHAR, role: key, required: true, pii: true, aliases: [subject_id, pseudo_mrn]}
-      gender: {type: VARCHAR, role: attribute, aliases: [sex], allowed: [Female, Male]}
-      location_district: {type: VARCHAR, role: attribute, aliases: [patient_district, home_district]}
+      patient_id:
+        type: VARCHAR
+        role: key
+        aliases:
+        - subject_id
+        - pseudo_mrn
+        required: true
+        pii: true
+        datasets:
+        - amu_inpatient_survey
+      gender:
+        type: VARCHAR
+        role: attribute
+        aliases:
+        - sex
+        allowed:
+        - Female
+        - Male
+        datasets:
+        - amu_inpatient_survey
+      location_district:
+        type: VARCHAR
+        role: attribute
+        aliases:
+        - patient_district
+        - home_district
   dim_facility:
     kind: dimension
     description: One row per health facility.
     key: facility_id
-    synthetic: {rows: 7}
+    synthetic:
+      rows: 7
     columns:
-      facility_id: {type: VARCHAR, role: key, required: true, aliases: [hospital_id]}
-      facility_name: {type: VARCHAR, role: attribute, aliases: [hospital_name, health_facility]}
-      facility_level: {type: VARCHAR, role: attribute,
-                       allowed: [National Referral, Regional Referral, District Hospital, Health Center IV]}
-      district: {type: VARCHAR, role: attribute, aliases: [facility_district]}
-      region: {type: VARCHAR, role: attribute, aliases: [facility_region]}
+      facility_id:
+        type: VARCHAR
+        role: key
+        aliases:
+        - hospital_id
+        - hospital_code
+        required: true
+        datasets:
+        - amu_inpatient_survey
+      facility_name:
+        type: VARCHAR
+        role: attribute
+        aliases:
+        - hospital_name
+        - health_facility
+        datasets:
+        - amu_inpatient_survey
+      facility_level:
+        type: VARCHAR
+        role: attribute
+        aliases:
+        - hospital_level
+        allowed:
+        - National Referral
+        - Regional Referral
+        - District Hospital
+        - Health Center IV
+        - General Hospital
+        datasets:
+        - amu_inpatient_survey
+      district:
+        type: VARCHAR
+        role: attribute
+        aliases:
+        - facility_district
+        datasets:
+        - amu_inpatient_survey
+      region:
+        type: VARCHAR
+        role: attribute
+        aliases:
+        - facility_region
   dim_visit:
     kind: dimension
     description: The spine. One row per encounter; every fact joins here.
     key: visit_id
-    links: [dim_patient, dim_facility]
+    links:
+    - dim_patient
+    - dim_facility
     columns:
-      visit_id: {type: VARCHAR, role: key, required: true, aliases: [encounter_id]}
-      visit_date: {type: DATE, role: attribute, required: true, aliases: [encounter_date, date_of_visit]}
-      visit_type: {type: VARCHAR, role: attribute, allowed: [Outpatient, Inpatient, Emergency, Antenatal]}
-      admission_ward: {type: VARCHAR, role: attribute, aliases: [ward],
-                       description: "The ward as the hospital names it (kept exactly as recorded)"}
+      visit_id:
+        type: VARCHAR
+        role: key
+        aliases:
+        - encounter_id
+        - admission_id
+        required: true
+        datasets:
+        - amu_inpatient_survey
+      visit_date:
+        type: DATE
+        role: attribute
+        aliases:
+        - encounter_date
+        - date_of_visit
+        - admission_date
+        required: true
+        datasets:
+        - amu_inpatient_survey
+      visit_type:
+        type: VARCHAR
+        role: attribute
+        allowed:
+        - Outpatient
+        - Inpatient
+        - Emergency
+        - Antenatal
+      admission_ward:
+        type: VARCHAR
+        role: attribute
+        description: The ward as the hospital names it (kept exactly as recorded)
+        aliases:
+        - ward
+        datasets:
+        - amu_inpatient_survey
       ward_type:
         type: VARCHAR
         role: attribute
         description: Standard ward category, mapped from admission_ward through crosswalks/ward_type.yaml
-        allowed: [Medical, Surgical, Paediatric, Maternity, ICU, Emergency, Outpatient, Other]
-        crosswalk: {file: ward_type, from: admission_ward, scope: facility_id}
-      triage_urgency: {type: VARCHAR, role: attribute, allowed: [Routine, Urgent, Emergency]}
-      age_group: {type: VARCHAR, role: attribute, description: Age band at the time of the visit,
-                  allowed: [0-4, 5-14, 15-24, 25-49, 50-64, 65+]}
+        allowed:
+        - Medical
+        - Surgical
+        - Paediatric
+        - Maternity
+        - ICU
+        - Emergency
+        - Outpatient
+        - Other
+        crosswalk:
+          file: ward_type
+          from: admission_ward
+          scope: facility_id
+        datasets:
+        - amu_inpatient_survey
+      triage_urgency:
+        type: VARCHAR
+        role: attribute
+        allowed:
+        - Routine
+        - Urgent
+        - Emergency
+      age_group:
+        type: VARCHAR
+        role: attribute
+        description: Age band at the time of the visit
+        allowed:
+        - 0-4
+        - 5-14
+        - 15-24
+        - 25-49
+        - 50-64
+        - 65+
+      age_years:
+        type: BIGINT
+        role: attribute
+        description: Age in completed years at admission
+        range:
+        - 0
+        - 120
+        datasets:
+        - amu_inpatient_survey
+      survey_date:
+        type: DATE
+        role: attribute
+        description: Date the point-prevalence survey form was completed
+        datasets:
+        - amu_inpatient_survey
   dim_diagnosis:
     kind: dimension
     key: diagnosis_id
-    synthetic: {rows: 8}
+    synthetic:
+      rows: 8
     columns:
-      diagnosis_id: {type: VARCHAR, role: key, required: true}
-      diagnosis_name: {type: VARCHAR, role: attribute}
-      icd10_code: {type: VARCHAR, role: attribute, aliases: [icd10, icd_code]}
-      clinical_category: {type: VARCHAR, role: attribute,
-                          allowed: [Infectious, Respiratory, Cardiovascular, Endocrine, Gastrointestinal]}
+      diagnosis_id:
+        type: VARCHAR
+        role: key
+        required: true
+      diagnosis_name:
+        type: VARCHAR
+        role: attribute
+      icd10_code:
+        type: VARCHAR
+        role: attribute
+        aliases:
+        - icd10
+        - icd_code
+      clinical_category:
+        type: VARCHAR
+        role: attribute
+        allowed:
+        - Infectious
+        - Respiratory
+        - Cardiovascular
+        - Endocrine
+        - Gastrointestinal
   dim_medication:
     kind: dimension
     key: medication_id
-    synthetic: {rows: 8}
+    synthetic:
+      rows: 8
     columns:
-      medication_id: {type: VARCHAR, role: key, required: true, aliases: [drug_id]}
-      medication_name: {type: VARCHAR, role: attribute, aliases: [drug_name]}
-      antibiotic_class: {type: VARCHAR, role: attribute, aliases: [drug_class]}
+      medication_id:
+        type: VARCHAR
+        role: key
+        aliases:
+        - drug_id
+        - atc_code
+        required: true
+        datasets:
+        - amu_inpatient_survey
+      medication_name:
+        type: VARCHAR
+        role: attribute
+        aliases:
+        - drug_name
+        - antimicrobial_name
+        datasets:
+        - amu_inpatient_survey
+      antibiotic_class:
+        type: VARCHAR
+        role: attribute
+        aliases:
+        - drug_class
+        - antimicrobial_class
+        datasets:
+        - amu_inpatient_survey
+      aware_category:
+        type: VARCHAR
+        role: attribute
+        description: WHO AWaRe category of the antimicrobial
+        allowed:
+        - Access
+        - Watch
+        - Reserve
+        datasets:
+        - amu_inpatient_survey
   dim_lab_test:
     kind: dimension
     key: test_id
-    synthetic: {rows: 6}
+    synthetic:
+      rows: 6
     columns:
-      test_id: {type: VARCHAR, role: key, required: true, aliases: [lab_id]}
-      test_name: {type: VARCHAR, role: attribute}
+      test_id:
+        type: VARCHAR
+        role: key
+        aliases:
+        - lab_id
+        required: true
+      test_name:
+        type: VARCHAR
+        role: attribute
   fact_encounters:
     kind: fact
     description: One row per visit with the encounter's own measures.
-    grain: [visit_id]
+    grain:
+    - visit_id
     columns:
-      length_of_stay_days: {type: DOUBLE, role: measure, aliases: [los, los_days], range: [0, 365]}
-      encounter_cost_ugx: {type: DOUBLE, role: measure, aliases: [visit_cost, total_cost], range: [0, 50000000]}
-      prior_antibiotic_use_30d: {type: VARCHAR, role: attribute, allowed: ['Yes', 'No']}
-      substance_use_history: {type: VARCHAR, role: attribute, description: Substance use reported at this visit}
+      length_of_stay_days:
+        type: DOUBLE
+        role: measure
+        aliases:
+        - los
+        - los_days
+        range:
+        - 0
+        - 365
+      encounter_cost_ugx:
+        type: DOUBLE
+        role: measure
+        aliases:
+        - visit_cost
+        - total_cost
+        range:
+        - 0
+        - 50000000
+      prior_antibiotic_use_30d:
+        type: VARCHAR
+        role: attribute
+        allowed:
+        - 'Yes'
+        - 'No'
+      substance_use_history:
+        type: VARCHAR
+        role: attribute
+        description: Substance use reported at this visit
   fact_diagnoses:
     kind: fact
-    links: [dim_diagnosis]
-    grain: [visit_id, diagnosis_id]
-    synthetic: {per_visit: [1, 2]}
+    links:
+    - dim_diagnosis
+    grain:
+    - visit_id
+    - diagnosis_id
+    synthetic:
+      per_visit:
+      - 1
+      - 2
     columns: {}
   fact_prescriptions:
     kind: fact
-    links: [dim_medication]
-    grain: [visit_id, medication_id]
-    synthetic: {per_visit: [0, 3]}
+    links:
+    - dim_medication
+    grain:
+    - visit_id
+    - medication_id
+    synthetic:
+      per_visit:
+      - 0
+      - 3
     columns:
-      drug_cost_ugx: {type: DOUBLE, role: measure, aliases: [prescription_cost], range: [0, 10000000]}
-      drug_administration_route: {type: VARCHAR, role: attribute, aliases: [route], allowed: [IV, Oral, IM]}
+      drug_cost_ugx:
+        type: DOUBLE
+        role: measure
+        aliases:
+        - prescription_cost
+        range:
+        - 0
+        - 10000000
+      drug_administration_route:
+        type: VARCHAR
+        role: attribute
+        aliases:
+        - route
+        allowed:
+        - IV
+        - Oral
+        - IM
+        datasets:
+        - amu_inpatient_survey
+      diagnosis_icd10:
+        type: VARCHAR
+        role: attribute
+        description: Main diagnosis for the antimicrobial, ICD-10
+        datasets:
+        - amu_inpatient_survey
+      dose_mg:
+        type: DOUBLE
+        role: measure
+        description: Single dose in milligrams
+        range:
+        - 0
+        - 10000
+        datasets:
+        - amu_inpatient_survey
+      doses_per_day:
+        type: BIGINT
+        role: measure
+        description: Number of doses per day
+        range:
+        - 1
+        - 10
+        datasets:
+        - amu_inpatient_survey
+      treatment_days:
+        type: BIGINT
+        role: measure
+        description: Planned duration of the course in days
+        range:
+        - 1
+        - 90
+        datasets:
+        - amu_inpatient_survey
+      indication_type:
+        type: VARCHAR
+        role: attribute
+        description: 'Indication: CAI, HAI, SP, MP, UNK'
+        allowed:
+        - CAI
+        - HAI
+        - SP
+        - MP
+        - UNK
+        datasets:
+        - amu_inpatient_survey
+      treatment_basis:
+        type: VARCHAR
+        role: attribute
+        description: Empirical, or targeted at a culture result
+        allowed:
+        - Empirical
+        - Targeted
+        datasets:
+        - amu_inpatient_survey
+      culture_sent:
+        type: VARCHAR
+        role: attribute
+        description: Specimen sent for culture during this admission
+        allowed:
+        - Y
+        - N
+        datasets:
+        - amu_inpatient_survey
+      specimen_type:
+        type: VARCHAR
+        role: attribute
+        description: Specimen sent for culture
+        allowed:
+        - Blood
+        - Urine
+        - Pus swab
+        - CSF
+        - Sputum
+        datasets:
+        - amu_inpatient_survey
+      organism_isolated:
+        type: VARCHAR
+        role: attribute
+        description: Organism isolated from the culture
+        datasets:
+        - amu_inpatient_survey
+      resistant_to_prescribed:
+        type: VARCHAR
+        role: attribute
+        description: Isolate resistant to this antimicrobial
+        allowed:
+        - Y
+        - N
+        datasets:
+        - amu_inpatient_survey
   fact_lab_results:
     kind: fact
-    links: [dim_lab_test]
-    synthetic: {per_visit: [0, 2]}
+    links:
+    - dim_lab_test
+    synthetic:
+      per_visit:
+      - 0
+      - 2
     columns:
-      ast_interpretation: {type: VARCHAR, role: attribute, allowed: [S, I, R]}
-      zone_diameter_mm: {type: DOUBLE, role: measure, range: [0, 60]}
+      ast_interpretation:
+        type: VARCHAR
+        role: attribute
+        allowed:
+        - S
+        - I
+        - R
+      zone_diameter_mm:
+        type: DOUBLE
+        role: measure
+        range:
+        - 0
+        - 60

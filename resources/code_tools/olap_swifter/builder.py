@@ -64,7 +64,12 @@ class DynamicOLAPBuilder:
             raw_sql = resolution.raw_sql.get((col.table, col.name))
             if raw_sql is None:
                 continue
-            raws = [i for i in col.inputs] if col.expr else [raw_sql.strip('"')]
+            if col.crosswalk:
+                raws = [col.name]
+            elif col.expr:
+                raws = [i for i in col.inputs]
+            else:
+                raws = [raw_sql.strip('"')]
             for raw in raws:
                 if raw in self.fields:
                     continue

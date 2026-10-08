@@ -1,0 +1,80 @@
+base: clinical_visit
+reason: "AMU inpatient survey: admission visit details, medication AWaRe categories, prescription dosage and microbiology"
+add_columns:
+  dim_visit:
+    age_years:
+      type: BIGINT
+      role: attribute
+      range: [0, 120]
+      description: "Age in completed years at admission"
+    survey_date:
+      type: DATE
+      role: attribute
+      description: "Date the point-prevalence survey form was completed"
+  dim_medication:
+    aware_category:
+      type: VARCHAR
+      role: attribute
+      allowed: [Access, Watch, Reserve]
+      description: "WHO AWaRe category of the antimicrobial"
+  fact_prescriptions:
+    diagnosis_icd10:
+      type: VARCHAR
+      role: attribute
+      description: "Main diagnosis for the antimicrobial, ICD-10"
+    dose_mg:
+      type: DOUBLE
+      role: measure
+      range: [0, 10000]
+      description: "Single dose in milligrams"
+    doses_per_day:
+      type: BIGINT
+      role: measure
+      range: [1, 10]
+      description: "Number of doses per day"
+    treatment_days:
+      type: BIGINT
+      role: measure
+      range: [1, 90]
+      description: "Planned duration of the course in days"
+    indication_type:
+      type: VARCHAR
+      role: attribute
+      allowed: [CAI, HAI, SP, MP, UNK]
+      description: "Indication: CAI, HAI, SP, MP, UNK"
+    treatment_basis:
+      type: VARCHAR
+      role: attribute
+      allowed: [Empirical, Targeted]
+      description: "Empirical, or targeted at a culture result"
+    culture_sent:
+      type: VARCHAR
+      role: attribute
+      allowed: [Y, N]
+      description: "Specimen sent for culture during this admission"
+    specimen_type:
+      type: VARCHAR
+      role: attribute
+      allowed: [Blood, Urine, Pus swab, CSF, Sputum]
+      description: "Specimen sent for culture"
+    organism_isolated:
+      type: VARCHAR
+      role: attribute
+      description: "Organism isolated from the culture"
+    resistant_to_prescribed:
+      type: VARCHAR
+      role: attribute
+      allowed: [Y, N]
+      description: "Isolate resistant to this antimicrobial"
+add_aliases:
+  dim_facility.facility_id: [hospital_code]
+  dim_facility.facility_level: [hospital_level]
+  dim_visit.visit_id: [admission_id]
+  dim_visit.visit_date: [admission_date]
+  dim_medication.medication_id: [atc_code]
+  dim_medication.medication_name: [antimicrobial_name]
+  dim_medication.antibiotic_class: [antimicrobial_class]
+add_allowed_values:
+  dim_facility.facility_level: ["General Hospital"]
+add_excluded_variables:
+  patient_name: "direct identifier"
