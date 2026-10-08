@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  olap-swifter:
+    build:
+      context: ./resources/code_tools
+      dockerfile: Dockerfile
+    image: olap-swifter:latest
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: ["olap-swifter", "--help"]

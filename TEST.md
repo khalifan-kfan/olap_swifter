@@ -19,6 +19,43 @@ Read [SKILL.md](SKILL.md) for the modelling rules. Read
 
 ---
 
+## 0. The Data Boundary
+
+The orchestrating skill never touches real data ([SKILL.md](SKILL.md), Rule 1).
+That binds its sub-agents too:
+
+| Warehouse | What a sub-agent may return |
+| :--- | :--- |
+| **Dummy** (generated from the schema, 400 rows by default) | Aggregates and check results only, as for real data. A sub-agent may name the failing table, column and key values it found, but does not dump rows: dummy data obeys the schema, so the failing check already says what to fix, and rows only cost tokens. |
+| **Real** | Aggregates only: counts, sums, averages, pass/fail, and group counts with groups under the configured small-cell threshold suppressed. Never rows, never key values, never free text. |
+
+Where this file asks for "a sample of offending rows" or "the rows that
+disagree", report at most three offending key values from the dummy warehouse.
+On real data, report the count and the column or group instead.
+
+Every test should be proven on dummy data first. A test that fails on dummy data
+is a modelling or ETL defect; a test that passes on dummy data and fails on real
+data is a data-quality finding to report to the user.
+
+### Built-in checks
+
+The load step already runs a generated check for most mandates, from the schema
+alone. Sub-agents start from these results and add their own tests where the
+schema allows something these do not cover.
+
+| Mandate | Built-in checks |
+| :--- | :--- |
+| `pre_etl_validator` | `variable_coverage`, `spine_key_present`, `spine_key_nulls`, `entity_consistency`, `allowed_values`, `cast_failures`, `value_range`, `required_nulls`, `fact_grain`, `keys_shared_with_other_sources` (info) |
+| `relational_integrity_auditor` | `orphan_keys`, `entity_coverage`, `lineage`, `spine_coverage` (info) |
+| `metric_parity_verifier` | `fact_row_parity`, `measure_sum_parity` |
+| `clinical_research_query_agent` | none — its questions come from the dataset description's main and secondary questions |
+
+The context items below come from the schema file (tables, keys, grains,
+allowed codes, and the dataset's main fact) and from the staged source the load
+step creates.
+
+---
+
 ## 1. The One Rule That Makes This Work
 
 **The raw staging table is the only oracle.**

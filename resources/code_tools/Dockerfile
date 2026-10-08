@@ -23,17 +23,13 @@ COPY pyproject.toml .
 
 # Install Python packages
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir duckdb pydantic pandas networkx pytesseract Pillow presidio-analyzer presidio-anonymizer typer rich
+    pip install --no-cache-dir duckdb pydantic pandas networkx PyYAML pytesseract Pillow presidio-analyzer presidio-anonymizer typer rich spacy && \
+    python -m spacy download en_core_web_sm
 
-# Download spacy lightweight model for Presidio offline NLP
-RUN python -m spacy download en_core_web_sm
-
-# Copy source code
-COPY src/ ./src/
-COPY skills/ ./skills/
+# Copy package source code
+COPY olap_swifter/ ./olap_swifter/
 
 # Install local package in editable mode
 RUN pip install --no-cache-dir -e .
 
-ENTRYPOINT ["olap-swifter"]
-CMD ["--help"]
+CMD ["olap-swifter", "--help"]

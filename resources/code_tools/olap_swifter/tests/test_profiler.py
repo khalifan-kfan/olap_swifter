@@ -39,7 +39,7 @@ def test_deep_cube_slicer_and_latency():
 
     slicer = CubeSlicer(conn=store.conn)
     base_from = "dim_visit v JOIN dim_patient p ON v.patient_id = p.patient_id JOIN dim_facility f ON v.facility_id = f.facility_id"
-    candidate_dims = ["f.facility_level", "p.gender", "p.age_group", "v.visit_type"]
+    candidate_dims = ["f.facility_level", "p.gender", "v.age_group", "v.visit_type"]
 
     slices = slicer.dig_deepest_slices(
         base_from_clause=base_from,

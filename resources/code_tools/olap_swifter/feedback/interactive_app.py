@@ -6,7 +6,7 @@ Allows human-in-the-loop and Playwright automated agents to:
 3. Review semantic data validation status and join path depth.
 """
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import json
 
 
@@ -15,7 +15,8 @@ def generate_interactive_html(
     validation_summary: Dict[str, Any],
     join_analysis: Dict[str, Any],
     deep_slices: List[Dict[str, Any]],
-    output_path: str = "model_reviewer.html"
+    output_path: str = "model_reviewer.html",
+    table_options: Optional[List[str]] = None
 ) -> str:
     """Generates a standalone, rich interactive HTML application for review and Playwright automation."""
 
@@ -125,12 +126,7 @@ def generate_interactive_html(
         const joinAnalysis = {json.dumps(join_analysis)};
         const deepSlices = {json.dumps(deep_slices)};
 
-        const tableOptions = [
-            "dim_visit", "dim_patient", "dim_facility", "dim_provider",
-            "dim_date", "dim_diagnosis", "dim_medication", "dim_lab_test",
-            "fact_encounters", "fact_diagnoses", "fact_prescriptions",
-            "fact_lab_results", "fact_vitals"
-        ];
+        const tableOptions = {json.dumps(table_options or sorted({f["target_table"] for f in fields}))};
 
         const roleOptions = ["dimension_attribute", "metric", "primary_key", "foreign_key"];
 

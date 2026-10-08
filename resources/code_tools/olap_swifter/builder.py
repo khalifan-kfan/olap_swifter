@@ -52,6 +52,37 @@ class DynamicOLAPBuilder:
         self.conn.execute(f"CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM {table_name}")
         self._infer_default_mappings(df)
 
+    def load_mappings_from_schema(self, spec, resolution):
+        """
+        Field inventory from a registered schema's decisions for one staged source,
+        replacing keyword guesses. `resolution` is a schema.materializer.Resolution.
+        """
+        roles = {"key": "primary_key", "attribute": "dimension_attribute", "measure": "metric"}
+        self.fields.clear()
+        self.raw_table_name = resolution.staging
+        for col in spec.all_columns():
+            raw_sql = resolution.raw_sql.get((col.table, col.name))
+            if raw_sql is None:
+                continue
+            raws = [i for i in col.inputs] if col.expr else [raw_sql.strip('"')]
+            for raw in raws:
+                if raw in self.fields:
+                    continue
+                self.fields[raw] = FieldDefinition(
+                    name=raw, data_type=col.type, role=roles[col.role], target_table=col.table,
+                    is_key=col.role == "key", description=col.description or f"{spec.schema_id}: {col.table}.{col.name}",
+                )
+        for raw, why in resolution.excluded_raw.items():
+            self.fields[raw] = FieldDefinition(name=raw, data_type="VARCHAR", role="excluded",
+                                               target_table="excluded", description=why)
+        self.fields.pop("_source_row", None)
+
+    def verify_no_variable_left_out_of(self, table: str) -> Tuple[bool, List[str]]:
+        """Like verify_no_variable_left_out, for any staged table (lineage columns ignored)."""
+        raw_cols = set(self.conn.execute(f"PRAGMA table_info('{table}')").df()["name"]) - {"_source_row"}
+        missing = sorted(raw_cols - set(self.fields))
+        return (len(missing) == 0, missing)
+
     def _infer_default_mappings(self, df: pd.DataFrame):
         """
         Infers initial Dimension vs Many-to-Many Fact mappings for all columns.

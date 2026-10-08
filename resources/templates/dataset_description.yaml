@@ -1,0 +1,76 @@
+# ---------------------------------------------------------------------------
+# Dataset Description — one per dataset, kept in its inputs folder:
+#
+#   resources/inputs/<dataset name>/
+#       catalogue/             (required) one or more data dictionaries (.csv / .yaml / .yml)
+#       data/                  one or more raw CSV exports; only the code tools open them
+#       eda/                   one EDA per data file (eda/<file>.yaml); made from data/ if absent
+#       codes/                 code lists / vocabularies, one file each
+#       description.yaml       this file
+#
+# Write it in one line (paths are found in the folder; the EDA is made if missing):
+#   python -c "from olap_swifter import describe; describe('my_dataset', study='...', main_question='...', one_row_is='...', main_event='...')"
+# Other user fields are flat keywords, e.g. owner='...', codes={'diagnosis_code': 'icd10.csv'}
+# (see HOW_TO_RUN.md).
+#
+# The skill never reads your data rows. It models from the catalogue, the EDA
+# and this description.
+# ---------------------------------------------------------------------------
+
+# ============ Filled by the user (fields marked (required)) ============
+
+dataset:
+  name: ""                  # (required) short snake_case name = the inputs folder name
+  owner: ""                 # team / site / programme that produced the export
+  period_covered: ""        # e.g. 2023-01 to 2025-06
+  catalogue: ""             # (required) catalogue/ — every dictionary in it is read
+  eda: ""                   # (required) eda/ — one EDA per data file
+  data_files: []            # data/<file>.csv, each loaded as source <name>_<file>
+
+study:
+  title: ""
+  description: ""           # (required) 2-5 sentences: population, setting, purpose
+  study_type: ""            # surveillance | cohort | registry | trial | routine_care | survey | other
+  main_question: ""         # (required) the primary analysis this warehouse must answer
+  secondary_questions: []   # other analyses it should support
+
+unit_of_analysis:
+  one_row_is: ""            # (required) what one row of the export represents,
+                            #   e.g. "one susceptibility result per isolate per antibiotic"
+  main_event: ""            # (required) the event counted or measured -> the main fact table
+  main_measures: []         # variables that are summed, averaged or counted (if known)
+  repeated_within_visit: [] # variables with several values per visit (if known)
+
+codes_and_vocabularies: []  # code-list files in <inputs>/<name>/codes/, one entry each:
+                            # - {variable: diagnosis_code, system: ICD-10, file: codes/icd10.csv}
+
+privacy:
+  direct_identifiers: []    # names, phone numbers, NINs... -> excluded from the warehouse
+  quasi_identifiers: []     # DOB, village, rare conditions... -> coarsen or restrict
+  eda_category_labels_allowed: true   # may the EDA show category labels (small cells are always hidden)?
+
+known_issues: ""            # recoding history, missing periods, site differences...
+
+instructions_for_modeller: ""   # anything the skill must respect, e.g.
+                                #   "treat regimen as a dimension, not an attribute"
+
+# ============ Filled by the skill (leave empty) ============
+# Modelled from the catalogue, the EDA and the registry match, following the
+# visit-spine rules in SKILL.md. Required before the dataset is attached.
+
+visit:
+  identifier: ""            # variable holding the visit id, or how it is derived,
+                            #   e.g. "patient_id + visit_date"
+  definition: ""            # what counts as one visit in this dataset
+  date_variable: ""
+
+entities:                   # who/what the rows describe -> dimensions
+  patient_identifier: ""
+  facility_identifier: ""
+  others: []                # - {name: regimen, identifier: regimen_code, attributes: [regimen_line]}
+
+relationship_to_existing:
+  schema: ""                # the schema it was fitted / extended into, or the new one
+  decision: ""              # fit | extend | new_schema (from `source match`)
+  related_datasets: []      # attached datasets it shares tables with
+  shared_keys: []           # - {variable: visit_id, same_as: clinical_visit.dim_visit.visit_id}

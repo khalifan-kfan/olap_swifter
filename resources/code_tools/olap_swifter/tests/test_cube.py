@@ -31,7 +31,7 @@ def test_cube_slice_and_dice():
     # Dice: Filter across multiple dimensions
     dice_df = cube.slice_and_dice(
         measures=["COUNT(*) AS cnt", "SUM(e.encounter_cost_ugx) AS total_cost"],
-        group_by_dimensions=["p.gender", "p.age_group"],
+        group_by_dimensions=["p.gender", "v.age_group"],
         filters={
             "v.visit_type": ["Inpatient", "Emergency"],
             "p.gender": "Female"

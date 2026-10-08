@@ -1,0 +1,15 @@
+# Matching: a dataset whose variables are at least this different (fraction
+# unmatched) from the best registered schema is modelled as a new schema.
+# Below it, the dataset is fitted into that schema, extended additively if needed.
+new_schema_min_difference: 0.8
+
+# EDA privacy: category labels are listed only for variables with at most
+# eda_max_categories distinct values, and labels seen fewer than
+# eda_min_category_count times are suppressed.
+eda_max_categories: 20
+eda_min_category_count: 5
+
+# Dummy data: at most this many rows (whole visits only). Enough to exercise
+# every gate and check; raise it per run (`synth --max-rows`) only when a test
+# genuinely needs more volume.
+dummy_max_rows: 400

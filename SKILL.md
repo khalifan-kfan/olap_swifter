@@ -1,37 +1,80 @@
 ---
 name: medical-olap-orchestrator
-description: Use this skill when the user wants to turn a flat, messy clinical CSV into a medical OLAP data warehouse. It guides the agent to read the raw data, design Star, Snowflake and Fact Constellation schemas around a central Visit spine, load the data into DuckDB, and use sub-agents to prove that nothing was lost or changed.
+description: Use this skill when the user wants to turn a clinical or health dataset (any domain — AMR, HIV, TB, maternal health, routine care) into a medical OLAP data warehouse. Given the dataset's description, catalogue and EDA, the agent matches it against the registry of built schemas, fits or extends an existing schema or models a new one around the visit spine, proves the schema and ETL on dummy data, and only then loads real data — seeing execution results, never the data itself.
 ---
 
 # Medical OLAP Orchestrator
 
-This skill teaches the agent **how to think** about turning wide, messy clinical
-data into a trustworthy OLAP warehouse.
+This skill teaches the agent **how to think** about turning a wide clinical
+dataset into a trustworthy OLAP warehouse. The skill is the orchestrator: it
+makes every modelling decision. The code tools only execute those decisions and
+report back.
 
-It is the *what* and *why*. The *how* lives in two companion files:
+It is the *what* and *why*. The *how* lives in companion files:
 
-- **[HOW_TO_RUN.md](HOW_TO_RUN.md)** — every command, SQL template, code tool and
-  file path. Read it when you are ready to actually run something.
-- **[TEST.md](TEST.md)** — the sub-agent test prompts and their pass conditions.
+- **[HOW_TO_RUN.md](HOW_TO_RUN.md)** — every command, file path and file format.
+- **[TEST.md](TEST.md)** — the sub-agent test mandates and their pass conditions.
+- **`resources/templates/dataset_description.yaml`** — what to ask the user, and
+  the sections the agent fills in itself.
 
-Do not put commands or paths in this file. Keep them in `HOW_TO_RUN.md`.
+Do not put commands or paths in this file beyond those three. Keep them in
+`HOW_TO_RUN.md`.
+
+Nothing here is specific to one disease or one dataset. AMR and HIV appear only
+as examples.
 
 ---
 
 ## 1. The Rules That Must Never Be Broken
 
-### Rule 1 — Zero Variable Loss
-Every single column in the raw file must end up somewhere: either as an
-attribute on a **dimension** (something that describes an entity) or as a
-measure or key on a **fact** (something that happened, or something measured).
+### Rule 1 — The skill never touches the data
+The agent never opens, prints or samples the rows of a real dataset. It models
+from three inputs (Rule 2) and learns about the loaded data only from execution
+results: counts, sums, pass/fail, null rates, category counts with small cells
+hidden. If a variable needs special handling — split a combined field, derive a
+visit id, parse a code — the agent writes the rule into the schema as an
+expression; the code applies it and reports how many values succeeded or failed.
 
-Never drop a column because it looks unimportant. In clinical surveillance, a
-dropped column changes the answer.
+This holds for dummy data too. Dummy data is capped (400 rows by default) and
+the agent reads only what the tools return about it — counts and check
+results — never the file. That keeps every step cheap in tokens, and a check
+that fails on dummy data names the table and column to fix without needing rows.
 
-### Rule 2 — The Visit Is the Spine
+### Rule 2 — Three inputs, and two are required
+Every dataset arrives with:
+
+| Input | Required | What it gives the agent |
+| :--- | :--- | :--- |
+| **Catalogue** (data dictionary) | yes | Variable names, meanings, types, codes. |
+| **EDA** | yes | Aggregate shape of the real file: types, null rates, ranges, category counts. |
+| **Description** (the template) | strongly expected | The study, the main question, what one row is, the main event, code lists, privacy constraints, instructions. |
+
+All three live in one inputs folder per dataset, with the data and the code
+lists (vocabularies). A dataset often arrives as several exports with several
+dictionaries, so catalogues, data, EDAs and code lists are each a folder of
+files. Catalogues and EDAs are merged by variable name, and every variable
+records which data files carry it. Each data file loads as its own source of
+the dataset. Paths always point inside that folder.
+
+Without a catalogue and an EDA, stop and ask for them. Without a description,
+the main fact and the grain are guesses — say so, and ask the user to fill the
+template. Its questions exist because each answer drives a modelling decision.
+
+The user answers only what they know about the study. The **visit**,
+**entities** and **relationship to existing schemas** sections are the agent's
+work: it models them from the catalogue, the EDA and the registry match, and
+writes them into the description before attaching.
+
+### Rule 3 — Zero variable loss
+Every variable in the dataset must end up somewhere: a dimension attribute, a
+fact measure or attribute, a key — or explicitly excluded with a written reason
+(direct identifiers such as names and phone numbers are excluded, not dropped
+silently). The load refuses to run while any variable is unaccounted for.
+
+### Rule 4 — The visit is the spine
 In medicine, nothing happens on its own. A diagnosis, a drug, a lab result, a
-vital sign — each one happens **during a visit**. So the visit dimension is the
-centre of the model, and every fact table joins back to it.
+viral load — each happens **during a visit**. The visit dimension is the centre
+of the model and every fact joins back to it.
 
 ```
                       +-------------------+
@@ -46,31 +89,55 @@ centre of the model, and every fact table joins back to it.
            +---------------+    |    +----------------+
            |                    |                     |
 +----------v---------+ +--------v--------+ +----------v---------+
-|  fact_encounters   | |  fact_diagnoses | | fact_prescriptions |
+|  fact_<event A>    | |  fact_<event B> | |  fact_<event C>    |
 +--------------------+ +-----------------+ +--------------------+
 ```
 
-If a fact row has no visit, the model is wrong. Fix the model, not the data.
+If a dataset has no visit identifier, derive one (for example patient plus date)
+as an expression and record how in the schema. If a fact row has no visit, the
+model is wrong. Fix the model, not the data.
 
-### Rule 3 — The Numbers Must Still Add Up
-After the data is split into many tables, the totals must match the original
-file. A sum, an average and a row count on the warehouse must equal the same
-thing on the raw data. If they don't, the split was wrong.
+### Rule 5 — Reuse, never rename
+Schemas are stored once and reused. A table name means the same table across
+the whole warehouse: if `dim_patient` exists, a new dataset uses it. Changes are
+**additive only** — new tables, new columns, new aliases, new links, new allowed
+codes, new exclusions. Nothing existing is renamed, retyped or removed, because
+data already loaded depends on it. A source column whose name differs from the
+schema's (`sex` vs `gender`) is mapped with an alias, not a rename.
+
+### Rule 6 — Keep the site's word, add the standard one
+Sites name the same thing differently: one hospital's "Paediatrics" is
+another's "Pediatric", "PAEDIATRIC" or "Children's Ward", and some wards exist
+at one site only ("Burns Unit", "TB Ward"). The same name can even mean
+different things at different sites ("Ward 4B"). Never overwrite the site's
+label and never drop it: keep it exactly as recorded, and add a **standard
+category** column mapped from it through a **crosswalk**. Analysis slices by
+the standard category; the site's label stays for anyone who needs the detail.
+
+Mapping labels is the agent's own judgement — the AI step in the middle of the
+workflow. The tools list a vocabulary's distinct labels with their counts and
+the sites they appear at (vocabularies only — never identifiers or free text);
+the agent decides what each label means and writes the crosswalk. A label
+whose meaning differs between sites gets one entry per site.
+
+### Rule 7 — The numbers must still add up
+After the data is split into tables, totals must match the source. Counts,
+sums and entity counts in the warehouse must equal the same question asked of
+the staged source. If they don't, the split was wrong.
 
 ---
 
-## 2. The Three Schemas to Build
+## 2. One Constellation
 
-Build them in this order. Each one is a step up in detail.
+There is one warehouse, and it is a **fact constellation**: many fact tables
+sharing the same dimensions, all anchored on the visit spine. Each schema is a
+view onto part of it — the tables one kind of study needs — and schemas overlap
+wherever they share tables.
 
-| Level | Schema | What it is | Use it for |
-| :--- | :--- | :--- | :--- |
-| 1 | **Star** | One wide fact table, dimensions hanging off it. | Fast, simple, top-level reporting. |
-| 2 | **Snowflake** | Same, but dimensions are normalised into hierarchies (district → region). | Cleaner drill-down paths. |
-| 3 | **Fact Constellation** *(the main one)* | Several fact tables sharing the same dimensions, all anchored on the visit spine. | Real clinical analysis across encounters, drugs and labs. |
-
-The Fact Constellation is the goal. The other two are stepping stones and
-cross-checks.
+Each schema lives in one file. The file records which datasets are attached to
+it, the main fact each dataset answers to, and, on every column, which datasets
+feed it. That is how the output highlights where a dataset sits inside the
+constellation.
 
 ---
 
@@ -78,86 +145,173 @@ cross-checks.
 
 ```mermaid
 graph TD
-    A[1. Read the raw CSV and decide what each column is] --> B[2. Check the data before building anything]
-    B -- Something is missing or wrong --> A
-    B -- Looks good --> C[3. Build the warehouse in DuckDB]
-    C --> D[4. Send sub-agents to test it]
-    D -- A test failed --> E[5. Read the error, fix the mapping]
-    E --> C
-    D -- Everything passed --> F[Done: a warehouse you can trust]
+    A[1. Collect description, catalogue, EDA] --> B[2. Understand the variables]
+    B --> C[3. Match against the registry]
+    C -- fit --> F[5. Attach the dataset]
+    C -- extend --> D[4a. Write an additive patch]
+    C -- new_schema --> E[4b. Model a new schema, reusing tables]
+    D --> F
+    E --> F
+    F --> G[6. Dummy data: ETL, build, TEST.md]
+    G -- a check failed --> H[Fix the schema] --> G
+    G -- all pass --> R[Request the production data]
+    R --> I[7. Production data: ETL, build, TEST.md]
+    I -- a gate or check failed --> J[Debug: fix the schema or report a data issue] --> I
+    I -- all pass --> K[8. Report back with the highlighted constellation]
 ```
 
-### Step 1 — Read and classify
-Look at the real column names and a few real rows. Then decide, column by
-column, where each one belongs:
+### Step 1 — Collect the inputs
+The agent runs this step for the user. Ask them to put the catalogue (and the
+data or an EDA, and any code lists) in the dataset's inputs folder, and to
+answer four questions: the study, the main question, what one row is, and the
+main event. Then write the description with the one-line `describe(...)`
+helper. It finds the files in the folder, makes the EDA from the data when
+there is none (without showing the agent any rows), lists the code lists with
+their sizes only, and writes the template's user sections. If the user would
+rather do it themselves, give them the same one line to fill in. Any required
+answer left empty is reported back; ask for it before modelling.
 
-- Does it **describe a person, place or thing**? → dimension attribute.
-- Does it **record an event or a measurement**? → fact.
-- Does it **identify the encounter**? → the visit spine.
+Code lists can be large (a full ICD-10 list). The agent works from their names
+and sizes; it does not read them into context.
 
-Group columns that describe the same entity into the same dimension. Group
-measurements taken at the same moment into the same fact.
+### Step 2 — Understand the variables
+From the catalogue and the description, decide for each variable what it is:
 
-### Step 2 — Check before you build
-Run the pre-flight gates. Nothing gets created until these pass:
+- Does it **identify** something (visit, patient, facility, regimen, organism)? → a key.
+- Does it **describe a person, place or thing** and stay the same for that thing? → a dimension attribute.
+- Does it **record an event or a measurement**? → a fact measure or attribute.
+- Does it take **several values within one visit** (several diagnoses, drugs, tests)? → its own fact table, with a grain that says what one row is.
 
-1. Every raw column is accounted for in the plan.
-2. The visit key is never empty.
-3. Coded clinical values use only their allowed codes (for example, antibiotic
-   susceptibility results should only ever be `S`, `I`, `R` or empty).
+The description's *main event* is the main fact. Use the EDA to confirm: null
+rates show which variables travel together, distinct counts show which columns
+can be keys, ranges show what a measure looks like.
 
-If a gate fails, go back to Step 1. Do not build on top of a known problem.
+Look for **vocabulary variables** whose labels vary by site — wards, units,
+departments, specimen names, local test names. The EDA hides them when they
+have many labels, so list them with the values tool (Rule 6). Each one becomes
+two columns: the site's label (an existing column, matched by alias) and a
+standard category with a crosswalk. Map every label. When unsure what a
+site-specific label means, ask the user rather than guess.
 
-### Step 3 — Build it
-Load the raw file into a staging table, then create the dimensions, then the
-visit spine, then the facts. Always in that order, because each layer depends
-on the one before it.
+Then fill the agent's sections of the description:
 
-### Step 4 — Prove it with sub-agents
-Don't mark the job done yourself. Hand the checking to specialised sub-agents,
-each with one job:
+- **visit** — the variable that identifies a visit, or how to derive one
+  (Rule 4), what one visit means here, and its date.
+- **entities** — the patient, the facility and any other thing the rows
+  describe, each with its identifier and the attributes that stay stable for it.
 
-| Sub-agent | What it proves |
-| :--- | :--- |
-| `pre_etl_validator` | The raw data was fit to build on. |
-| `relational_integrity_auditor` | No fact row is orphaned; entity counts survived. |
-| `metric_parity_verifier` | Sums and averages still match the raw file. |
-| `clinical_research_query_agent` | Real clinical questions return sensible answers. |
+With several data files, check that every file carries the visit identifier
+(or what it is derived from) — a file without it cannot join the spine. Files
+can load in any order: a visit first seen in a facts file gets its details when
+the visits file loads.
 
-The mandates, methods and pass conditions for each are in [TEST.md](TEST.md).
+### Step 3 — Match against the registry
+Score the dataset against every registered schema. The result is one of:
 
-Sub-agents are not limited to a fixed list of checks. They hold the raw staging
-table, which is the source of truth for the dataset in front of them, so they
-can invent a test *and* work out its correct answer on their own. Expect them to
-do that, and expect them to say which tests they wrote themselves.
+| Decision | Meaning | What the agent does |
+| :--- | :--- | :--- |
+| `fit` | Every variable already has a home. | Attach the dataset. |
+| `extend` | Enough overlap (less than the configured difference, 80% by default). | Write an additive patch for the unmatched variables. |
+| `new_schema` | Too different. | Model a new schema — reusing every existing table that applies. |
 
-### Step 5 — Fix and repeat
-When a sub-agent reports a failure:
+The match also reports **blockers** (an unresolved spine key, type conflicts,
+required columns missing), **code gaps** (catalogue codes the schema does not
+allow) and, for unmatched variables, **tables in other schemas that already
+model them**. Resolve blockers in the patch. Reuse those tables. When two
+schemas tie, choose the one whose main facts answer questions closest to the
+description's main question — never by list order.
 
-1. Take the **exact** error message and the query that produced it.
-2. Work out which mapping decision caused it.
-3. Change the table definition and rebuild.
-4. Run that same sub-agent again.
+Record the outcome in the description's **relationship_to_existing**: the
+schema, the decision, the datasets already attached to it that this one shares
+tables with, and the keys it shares. Attaching is refused until the visit
+identifier, schema and decision are filled.
 
-Repeat until every test passes. A partly passing model is a failing model.
+### Step 4 — Extend or model
+**Extending:** list what to add — tables, columns, aliases, links, codes,
+exclusions — and why. The reason is written to the schema's changelog.
+
+**Modelling new:** start from the existing shared tables (visit spine, patient,
+facility) and add only what this study needs. Pick the main fact from the
+description. Give every fact a grain. Mark direct identifiers as excluded.
+
+In both cases, write each variable's rules into the schema: type, allowed codes,
+valid range, aliases, an expression where a value must be derived, and a
+crosswalk where a site label maps to a standard category. Crosswalks grow
+additively too: add entries freely, but change an existing mapping only with
+the user's agreement.
+
+### Step 5 — Attach the dataset
+Attaching records the dataset on the schema (its catalogue, EDA and description,
+and its own main fact) and tags every column it feeds.
+
+### Step 6 — Prove it on dummy data
+1. **ETL.** Generate dummy data from the schema (capped at 400 rows; raise the
+   cap only when a check genuinely needs volume) and run the ETL with its gates
+   and post-load checks.
+2. **Build.** Run the warehouse pipeline on the loaded source: validation, join
+   paths, slices and the reviewer page.
+3. **Test.** Spawn the test sub-agents in [TEST.md](TEST.md) on the dummy
+   warehouse.
+
+Because dummy data obeys the schema by construction, any failure here is a
+modelling or ETL defect, not a data problem. Fix the schema and repeat the three
+steps until everything passes. Keep the dummy warehouse separate from the
+production one.
+
+Only then **ask the user for the production data**: confirm its file is in the
+inputs folder and that it is the export the catalogue and EDA describe.
+
+### Step 7 — Run the production data
+Run the same three steps (ETL, build, TEST.md) on the production file, in its
+own warehouse. The gates run first and refuse to load when something is wrong.
+Debug from the results:
+
+- **The schema is wrong** (a variable belongs on the visit, not the patient; a
+  grain is too coarse) → extend the schema, prove the change on dummy data
+  again (Step 6), then rerun production.
+- **The data is wrong** (a patient recorded with two genders; codes outside the
+  vocabulary) → report it to the user with the counts and ask how to proceed.
+  Do not bend the schema to hide a data-quality problem, and do not force the
+  load without the user's say-so.
+
+Repeat until the ETL loads, the build completes and every TEST.md mandate
+passes, or until only data issues the user has to decide on remain.
+
+### Step 8 — Report back when it is done
+Report once, at the end, with:
+
+- the constellation view with this dataset's tables and variables highlighted,
+  and the main fact it answers to;
+- the check and TEST.md summary for dummy and production runs (counts only);
+- every schema change made while debugging, from the changelog;
+- any data issues found, with their counts, and what the user decided.
 
 ---
 
 ## 4. Traps to Watch For
 
-- **Fan-out.** Joining two fact tables through the visit multiplies rows and
-  inflates totals. Reduce to distinct rows before summing.
-- **Silent deduplication.** `SELECT DISTINCT` when building a dimension can
-  merge two real entities that share a key. Check the counts afterwards.
+- **Fan-out.** Flat exports repeat visit-level values on every row of a visit.
+  Facts are de-duplicated to their grain; a measure summed on raw rows will be
+  inflated.
+- **Attributes that are not stable.** A value that changes between visits (age
+  band, substance use) belongs on the visit or a fact, not on the patient. The
+  entity-consistency gate catches this.
+- **Silent merges across sources.** Two sites may reuse the same ids. When keys
+  are shared with earlier sources, the load reports it — confirm they really are
+  the same entities.
+- **Labels that drift.** A new export brings ward names the crosswalk has
+  never seen. The load stops and names them; map them and reload. Do not map
+  a label you cannot interpret to `Other` to get past the gate.
 - **Sneaky nulls.** A null key turns into a lost row at join time. Catch nulls
   at the gate, not after the build.
-- **Float drift.** Compare sums and averages with a small tolerance, not exact
-  equality.
+- **Float drift.** Compare sums and averages with a small tolerance.
+- **Small cells.** Even aggregates can identify a person when a category is
+  rare. The EDA hides small categories; do not try to recover them.
 
 ---
 
 ## 5. When You Are Ready to Run
 
-Everything practical — environment setup, DuckDB SQL templates, the Python code
-tools, the CLI commands and the test suite — is in
+Everything practical — the commands for each step, the schema and patch file
+formats, the template, and the test suite — is in
 **[HOW_TO_RUN.md](HOW_TO_RUN.md)**.

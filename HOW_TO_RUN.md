@@ -13,9 +13,9 @@ If you want to understand *why* the model is built the way it is, read
 1. [Set up the environment](#1-set-up-the-environment)
 2. [Where the files live](#2-where-the-files-live)
 3. [Run it as an agent (the full skill)](#3-run-it-as-an-agent-the-full-skill)
-4. [Run it with plain DuckDB SQL](#4-run-it-with-plain-duckdb-sql)
+4. [File formats](#4-file-formats)
 5. [Run it from Python](#5-run-it-from-python)
-6. [Run it from the command line](#6-run-it-from-the-command-line)
+6. [Command reference](#6-command-reference)
 7. [Test the code tools](#7-test-the-code-tools)
 8. [Run the full test suite](#8-run-the-full-test-suite)
 9. [The datasets](#9-the-datasets)
@@ -50,224 +50,362 @@ pip install -e resources/code_tools
 
 | Path | What it holds |
 | :--- | :--- |
-| `resources/datasets/` | **All CSV datasets.** Every dataset you build from must be here. |
-| `resources/code_tools/olap_swifter/` | The Python package (builder, validator, cube, profiler, CLI). |
+| `resources/schemas/` | **The schema registry.** One YAML file per schema (`<schema_id>.yaml`), edited in place, never versioned. |
+| `resources/schemas/config.yaml` | Match threshold (`new_schema_min_difference`, default 0.8) and EDA small-cell settings. |
+| `resources/templates/dataset_description.yaml` | The dataset description template: user sections, then the sections the skill fills. |
+| `resources/inputs/<dataset>/` | **One folder per dataset:** `catalogue/`, `data/`, `eda/`, `codes/` (each may hold several files) and `description.yaml`. Git-ignored. |
+| `resources/datasets/` | Sample CSVs used by the tests (opened only by the code tools). |
+| `resources/datasets/synthetic/` | Dummy data, with its catalogue and EDA, generated from a schema. |
+| `resources/code_tools/olap_swifter/schema/` | Registry, matcher, extender, loader (ETL), dummy data, checks, constellation view. |
+| `resources/code_tools/olap_swifter/` | The rest of the package (cube, profiler, reviewer UI, OCR, CLI). |
 | `resources/code_tools/olap_swifter/tests/` | The pytest suite. |
-| `resources/clinical_warehouse.duckdb` | The DuckDB warehouse file, created when you build. |
 | `model_reviewer.html` | The interactive review page. |
 
-**Rule:** put new datasets in `resources/datasets/`. Nowhere else. The commands
-and tests below all assume that path.
+Keep dummy and real warehouses in separate DuckDB files (for example
+`resources/warehouse_dummy.duckdb` and `resources/warehouse.duckdb`).
+`OLAP_SWIFTER_SCHEMAS_DIR` points the tools at a different registry.
 
 ---
 
 ## 3. Run it as an agent (the full skill)
 
-Point the agent at a dataset and let it work through the five steps in
-[SKILL.md](SKILL.md).
+The skill ([SKILL.md](SKILL.md)) makes the decisions; these commands carry them
+out. Every command takes `--json`, which is what the agent should read. Nothing
+below prints a data row.
 
-```mermaid
-graph TD
-    A[Messy CSV in resources/datasets/] --> B[Step 1: Read columns, plan the tables]
-    B --> C[Step 2: Pre-flight checks]
-    C -- Fails --> B
-    C -- Passes --> D[Step 3: Build in DuckDB]
-    D --> E[Step 4: Sub-agents test it]
-    E -- Fails --> F[Step 5: Fix the mapping]
-    F --> D
-    E -- Passes --> G[Certified warehouse]
+`O=".venv/bin/olap-swifter"` in the examples. An HIV dataset is used as the example.
+
+**Step 1 — Collect the inputs.** The user puts the files in the dataset's
+inputs folder (`OLAP_SWIFTER_INPUTS_DIR` overrides `resources/inputs/`):
+
+```
+resources/inputs/hiv_site_b/
+    catalogue/             (required) one or more dictionaries: visits.csv, viral_loads.yaml …
+    data/                  one or more exports: visits.csv, viral_loads.csv …
+    eda/                   optional: one EDA per data file, made from data/ if absent
+    codes/                 optional: one file per code list, e.g. regimens.csv, icd10.csv
 ```
 
-What the agent actually does at each step:
+An EDA is YAML (what the tools write by default) or a minimal CSV, one row per
+variable: `variable,type,rows,missing,missing_pct,distinct,min,max,mean,categories,suppressed_rows`
+(`categories` as `label:count|label:count`; only `variable` is required).
+`source eda <csv> --out eda/file.csv` writes the CSV form.
 
-**Step 1 — Read the data.** Ask DuckDB what is in the file:
+A dataset often arrives as several exports and dictionaries; put them all in.
+Dictionaries are merged by variable name, and a data file needs no matching
+dictionary file of the same name.
 
-```sql
-DESCRIBE SELECT * FROM 'resources/datasets/sample_wide_clinical.csv';
-SELECT * FROM 'resources/datasets/sample_wide_clinical.csv' LIMIT 5;
+Then the description is one line, with the four answers only the user can give:
+
+```bash
+.venv/bin/python -c "from olap_swifter import describe; describe('hiv_site_b', study='Adults on ART at four clinics, 2023-2025.', main_question='What share of patients are virally suppressed?', one_row_is='one viral load test', main_event='viral load test')"
 ```
 
-Then sort every column into one of these tables:
+It reads every dictionary in `catalogue/`, makes `eda/<file>.yaml` for each data
+file that has none (aggregates only, small categories suppressed), lists every
+file in `codes/` with its entry count (never the codes), and writes
+`description.yaml`. It returns each data file's row and variable counts and its
+source name, `<dataset>_<file>` (e.g. `hiv_site_b_viral_loads`).
+It prints the required answers still empty. Re-running it keeps what the skill
+has already filled in. Optional answers are flat keywords:
 
-| Table | Typical columns |
+| Keyword | Template field |
 | :--- | :--- |
-| `dim_patient` | `patient_id`, `gender`, `age_group`, `location_district`, `substance_use_history` |
-| `dim_facility` | `facility_id`, `facility_name`, `facility_level`, `district`, `region` |
-| `dim_diagnosis` | `diagnosis_id`, `diagnosis_name`, `clinical_category`, `icd10_code` |
-| `dim_medication` | `medication_id`, `medication_name`, `antibiotic_class`, `who_aware` |
-| `dim_lab_test` | `test_id`, `test_name`, `specimen_type` |
-| `dim_visit` *(the spine)* | `visit_id`, `patient_id`, `facility_id`, `visit_date`, `visit_type`, `admission_ward` |
-| `fact_encounters` | `visit_id`, `encounter_cost_ugx`, `length_of_stay_days`, `prior_antibiotic_use_30d` |
-| `fact_prescriptions` | `visit_id`, `medication_id`, `drug_cost_ugx`, `drug_administration_route`, `dose_mg` |
-| `fact_lab_results` | `visit_id`, `organism_name`, `tested_antibiotic`, `mic_ug_ml`, `zone_diameter_mm`, `ast_interpretation`, `is_mdr_isolate` |
+| `codes` | `codes_and_vocabularies`, e.g. `codes={'regimen_code': 'regimens.csv'}`; unnamed files in `codes/` are listed with the file stem as the variable |
+| `owner`, `period_covered` | `dataset.*` |
+| `title`, `study_type`, `secondary_questions` | `study.*` |
+| `main_measures`, `repeated_within_visit` | `unit_of_analysis.*` |
+| `direct_identifiers`, `quasi_identifiers`, `eda_labels_allowed` | `privacy.*` |
+| `known_issues`, `instructions` | `known_issues`, `instructions_for_modeller` |
 
-**Step 2 — Pre-flight checks.** Run these before creating anything:
+The CLI equivalent is `$O source describe hiv_site_b --study ... --main-question ...
+--one-row-is ... --main-event ... --json`. Paths outside the folder are refused.
 
-```sql
--- Gate 1: no empty visit keys
-SELECT COUNT(*) FROM 'resources/datasets/sample_wide_clinical.csv' WHERE visit_id IS NULL;
--- must return 0
+`visit`, `entities` and `relationship_to_existing` are not asked of the user:
+the skill writes them into `description.yaml` during Steps 2–3. `source match`
+lists them under `skill_to_fill`, and `attach` / `extend` / `register` refuse a
+description that still has `visit.identifier`, `relationship_to_existing.schema`
+or `relationship_to_existing.decision` empty.
 
--- Gate 2: susceptibility codes are only S, I, R or empty
-SELECT DISTINCT ast_interpretation FROM 'resources/datasets/sample_amr_clinical.csv';
--- must be a subset of {'S', 'I', 'R', NULL}
+**Step 2 — Site vocabularies.** For a variable whose labels differ between
+sites (wards, units, specimens…), list its labels and seed the crosswalk in
+one line. Identifiers and free-text-like variables are refused:
+
+```bash
+$O source values amu_inpatient_survey ward --by hospital_code --crosswalk ward_type --json
 ```
 
-Gate 3 (every raw column is mapped) is checked in code — see
-[section 7](#7-test-the-code-tools).
+It returns every label with its rows and the sites it appears at, and adds the
+labels not yet in `resources/schemas/crosswalks/ward_type.yaml` with an empty
+`maps_to`. The agent fills each `maps_to` (see [§4](#crosswalk)); the load
+refuses while any label is unmapped and names the missing ones.
 
-**Step 3 — Build.** Use the SQL in [section 4](#4-run-it-with-plain-duckdb-sql)
-or the CLI in [section 6](#6-run-it-from-the-command-line).
+**Steps 2–3 — Understand and match.** Catalogue and EDA are required; pass the
+folders and every file in them is merged (each variable lists the data files it
+appears in):
 
-**Step 4 — Test.** Spawn the sub-agents defined in [TEST.md](TEST.md).
+```bash
+$O source match --catalogue resources/inputs/hiv_site_b/catalogue \
+                --eda resources/inputs/hiv_site_b/eda \
+                --description resources/inputs/hiv_site_b/description.yaml --json
+```
 
-**Step 5 — Fix and rebuild.** Take the failing query, adjust the
-`CREATE OR REPLACE TABLE ... AS SELECT`, rebuild, re-run that sub-agent.
+Read `recommendation` (`fit` / `extend` / `new_schema`), `best_schema`,
+`tied_with`, and for the best candidate: `unmatched`, `blockers`, `code_gaps`,
+`reusable_from_other_schemas`.
+
+**Step 4a — Extend** (write a patch, see [§4](#4-file-formats)):
+
+```bash
+$O schema extend hiv_patch.yaml --dataset hiv_site_b \
+    --catalogue resources/inputs/hiv_site_b/catalogue --eda resources/inputs/hiv_site_b/eda \
+    --description resources/inputs/hiv_site_b/description.yaml --main-fact fact_viral_load --json
+```
+
+**Step 4b — New schema** (write the full schema YAML, validate, register):
+
+```bash
+$O schema validate my_new_schema.yaml --json          # structure + conflicts with reused tables
+$O schema register my_new_schema.yaml --dataset hiv_site_b --catalogue ... --eda ... --main-fact ... --json
+```
+
+**Step 5 — Fit** (nothing to add, just attach):
+
+```bash
+$O schema attach clinical_visit --dataset hiv_site_b --catalogue ... --eda ... --json
+```
+
+`extend`, `register` and `attach` all write the one schema file and return the
+dataset's columns and the constellation tables it feeds.
+
+**Step 6 — Dummy data: ETL, build, test.**
+
+```bash
+$O synth clinical_visit --out-dir resources/datasets/synthetic --json                 # capped dummy data
+$O etl clinical_visit resources/datasets/synthetic/clinical_visit_synthetic.csv \
+    --source clinical_visit_dummy --db resources/warehouse_dummy.duckdb --synthetic --json
+$O build --csv resources/datasets/synthetic/clinical_visit_synthetic.csv \
+    --schema clinical_visit --source clinical_visit_dummy --json                     # validation, joins, slices, reviewer
+```
+
+Dummy data is capped at 400 rows (whole visits; `dummy_max_rows` in
+`resources/schemas/config.yaml`). `synth` reports `visits`, `rows` and `capped`;
+pass `--max-rows N` only when a test needs more volume. The agent reads these
+JSON results, never the dummy CSV.
+
+`etl` and `build --json` exit non-zero on any failed gate or check; `build --json`
+returns counts only (table counts, check totals, failed checks, join distances,
+slice depth). Then run the TEST.md sub-agents against
+`resources/warehouse_dummy.duckdb`. Fix and repeat until all pass.
+
+**Ask the user for the production data** before going on: every export must be in
+`resources/inputs/hiv_site_b/data/` and match the catalogue and EDA.
+
+**Step 7 — Production data: ETL, build, test, debug, repeat.**
+
+Run it once per data file, with the source name `describe` returned, in any
+order:
+
+```bash
+for f in visits viral_loads; do
+  $O etl clinical_visit resources/inputs/hiv_site_b/data/$f.csv --source hiv_site_b_$f \
+      --db resources/warehouse.duckdb --json
+done
+$O build --csv resources/inputs/hiv_site_b/data/viral_loads.csv --schema clinical_visit \
+    --source hiv_site_b_viral_loads --json
+$O check clinical_visit --source hiv_site_b_viral_loads --db resources/warehouse.duckdb --json
+```
+
+Every source of the dataset (`hiv_site_b` or `hiv_site_b_<file>`) uses the
+dataset's main fact for its coverage check.
+
+Then run the TEST.md sub-agents on `resources/warehouse.duckdb` (aggregates only).
+On a failure: a schema problem → patch with `schema extend`, rerun Step 6, then
+this step; a data problem → report the counts to the user and wait for their
+decision. Repeat until everything passes, then report back once (Step 8).
+
+Use the dataset name (or `<dataset>_<file>`) as `--source`; the coverage check
+then uses the dataset's own main fact. `--force` loads despite failed gates. Use it only with the
+user's agreement.
+
+**Step 8 — Report back when it is done:**
+
+```bash
+$O constellation --highlight hiv_site_b --out resources/schemas/constellation_hiv_site_b.md
+```
+
+The Markdown has a Mermaid diagram with the dataset's tables marked ★ and a
+table per warehouse table showing which datasets feed each column.
+
+The report to the user is this view plus the dummy and production check and
+TEST.md totals, the schema changelog entries made while debugging, and any data
+issues with their counts.
 
 ---
 
-## 4. Run it with plain DuckDB SQL
+## 4. File formats
 
-No scripts needed. Open DuckDB and run the statements in order: stage → 
-dimensions → visit spine → facts.
+### Schema (`resources/schemas/<schema_id>.yaml`)
 
-### Option A — Wide clinical dataset
-
-```sql
--- 1. Stage the raw file
-CREATE OR REPLACE TABLE raw_clinical_records AS
-SELECT * FROM 'resources/datasets/sample_wide_clinical.csv';
-
--- 2. Dimensions
-CREATE OR REPLACE TABLE dim_patient AS
-SELECT DISTINCT patient_id, gender, age_group, location_district, substance_use_history
-FROM raw_clinical_records WHERE patient_id IS NOT NULL;
-
-CREATE OR REPLACE TABLE dim_facility AS
-SELECT DISTINCT facility_id, facility_name, facility_level
-FROM raw_clinical_records WHERE facility_id IS NOT NULL;
-
-CREATE OR REPLACE TABLE dim_diagnosis AS
-SELECT DISTINCT diagnosis_id, diagnosis_name, clinical_category
-FROM raw_clinical_records WHERE diagnosis_id IS NOT NULL;
-
-CREATE OR REPLACE TABLE dim_medication AS
-SELECT DISTINCT medication_id, medication_name, antibiotic_class
-FROM raw_clinical_records WHERE medication_id IS NOT NULL;
-
--- 3. The visit spine
-CREATE OR REPLACE TABLE dim_visit AS
-SELECT DISTINCT visit_id, patient_id, facility_id, visit_date, visit_type, admission_ward
-FROM raw_clinical_records WHERE visit_id IS NOT NULL;
-
--- 4. Facts, each anchored on visit_id
-CREATE OR REPLACE TABLE fact_encounters AS
-SELECT visit_id, patient_id, length_of_stay_days, encounter_cost_ugx, prior_antibiotic_use_30d
-FROM raw_clinical_records;
-
-CREATE OR REPLACE TABLE fact_prescriptions AS
-SELECT visit_id, patient_id, medication_id, drug_cost_ugx, drug_administration_route
-FROM raw_clinical_records WHERE medication_id IS NOT NULL;
-
-CREATE OR REPLACE TABLE fact_lab_results AS
-SELECT visit_id, patient_id, test_id, ast_interpretation, zone_diameter_mm
-FROM raw_clinical_records WHERE test_id IS NOT NULL;
+```yaml
+schema_id: clinical_visit            # snake_case; the file name
+title: General clinical visit warehouse
+study: >                              # what the schema is for
+  ...
+spine: {table: dim_visit, key: visit_id}
+main_fact: fact_encounters            # the schema's default main fact
+excluded_variables:                   # accounted for, deliberately not warehoused
+  patient_name: direct identifier
+datasets:                             # written by extend / register / attach
+  hiv_site_b: {catalogue: ..., eda: ..., main_fact: fact_viral_load, ...}
+changelog: [...]                      # one line per additive change
+tables:
+  dim_patient:
+    kind: dimension                   # dimension | fact
+    key: patient_id                   # dimensions only
+    links: [dim_other]                # dimensions this table references
+    synthetic: {rows: 60}             # dummy-data entity count
+    columns:
+      patient_id: {type: VARCHAR, role: key, required: true, pii: true}
+      gender: {type: VARCHAR, role: attribute, aliases: [sex], allowed: [Female, Male],
+               datasets: [hiv_site_b]}
+  fact_viral_load:
+    kind: fact                        # always linked to the spine
+    links: [dim_regimen]
+    grain: [visit_id]                 # what identifies one row
+    synthetic: {per_visit: [1, 1]}    # dummy rows per visit
+    columns:
+      viral_load_copies: {type: DOUBLE, role: measure, range: [0, 10000000]}
+      art_start_year:                 # a per-variable extraction rule
+        type: BIGINT
+        role: attribute
+        expr: "year(TRY_CAST(\"ART Start\" AS DATE))"   # DuckDB expression over raw columns
+        inputs: ["ART Start"]         # raw variables it reads (counts toward zero variable loss)
+        input_examples: ["2021-03-04"]  # used to generate dummy raw values
 ```
 
-### Option B — AMR surveillance dataset
+Types: `VARCHAR`, `BIGINT`, `DOUBLE`, `DATE`, `TIMESTAMP`, `BOOLEAN` (common
+synonyms such as `string`, `integer`, `numeric` are accepted). Roles: `key`
+(a dimension's own key only), `attribute`, `measure` (numeric). Every table also
+gets `_source_id` (and facts `_source_row`) for lineage. `dim_data_source`
+records each load: file, hash, schema, schema-file hash, synthetic flag, rows.
 
-```sql
--- 1. Stage the raw file
-CREATE OR REPLACE TABLE raw_clinical_records AS
-SELECT * FROM 'resources/datasets/sample_amr_clinical.csv';
+A table name means the same table in every schema. A new schema that uses an
+existing table must agree with it on kind, key and column types.
 
--- 2. Dimensions
-CREATE OR REPLACE TABLE dim_patient AS
-SELECT DISTINCT patient_id, gender, age_group, location_district, substance_use_history
-FROM raw_clinical_records WHERE patient_id IS NOT NULL;
+### Extension patch
 
-CREATE OR REPLACE TABLE dim_facility AS
-SELECT DISTINCT facility_id, facility_name, facility_level
-FROM raw_clinical_records WHERE facility_id IS NOT NULL;
-
--- 3. The visit spine
-CREATE OR REPLACE TABLE dim_visit AS
-SELECT DISTINCT visit_id, patient_id, facility_id, visit_date, admission_ward
-FROM raw_clinical_records WHERE visit_id IS NOT NULL;
-
--- 4. Facts
-CREATE OR REPLACE TABLE fact_encounters AS
-SELECT visit_id, patient_id, length_of_stay_days, encounter_cost_ugx, prior_antibiotic_use_30d
-FROM raw_clinical_records;
-
-CREATE OR REPLACE TABLE fact_lab_results AS
-SELECT
-    visit_id, patient_id, specimen_type, organism_name, tested_antibiotic,
-    antibiotic_class, mic_ug_ml, zone_diameter_mm, ast_interpretation, is_mdr_isolate
-FROM raw_clinical_records;
+```yaml
+base: clinical_visit
+reason: "HIV ART monitoring: regimen and viral load"   # goes to the changelog
+add_tables:      {dim_regimen: {...}, fact_viral_load: {...}}   # an existing table name is reused
+add_columns:     {dim_patient: {art_start_date: {type: DATE, role: attribute}}}
+add_aliases:     {dim_patient.gender: [sex]}
+add_links:       {fact_viral_load: [dim_regimen]}
+add_allowed_values: {fact_viral_load.vl_suppressed: ["Unknown"]}
+add_excluded_variables: {patient_name: "direct identifier"}
 ```
+
+Anything else (renames, retypes, removals) is refused.
+
+### Crosswalk
+
+A standard category column reads the site's label from another column:
+
+```yaml
+# in the schema
+admission_ward: {type: VARCHAR, role: attribute, aliases: [ward]}     # the site's own label, kept as recorded
+ward_type:
+  type: VARCHAR
+  role: attribute
+  allowed: [Medical, Surgical, Paediatric, Maternity, ICU, Emergency, Outpatient, Other]
+  crosswalk: {file: ward_type, from: admission_ward, scope: facility_id}
+```
+
+```yaml
+# resources/schemas/crosswalks/ward_type.yaml
+name: ward_type
+entries:
+  - {value: Pediatric, maps_to: Paediatric}           # case and spacing are ignored
+  - {value: Ward 4B, scope: HOSP-01, maps_to: Medical} # same name, different meaning per site:
+  - {value: Ward 4B, scope: HOSP-03, maps_to: Surgical}#   one entry per site (scope wins)
+```
+
+`maps_to` must be one of the column's `allowed` values. The `crosswalk_coverage`
+gate blocks the load while any label is unmapped and lists the labels (with
+rows and site), the only check that shows values, because they are vocabulary.
+Dummy data draws ward labels from the crosswalk's general entries.
+
+### Catalogue
+
+CSV or YAML, one entry per variable. Headers are matched loosely:
+`variable`/`name`/`field`, `description`/`label`, `type`/`data_type`,
+`values`/`codes`/`allowed_values` (separated by `|`, `;` or `,`), `units`.
+
+### EDA
+
+Any format is accepted and recorded for the agent to read. EDAs written by
+`source eda` (YAML with `variables`) also feed their types and statistics into
+matching.
 
 ---
 
 ## 5. Run it from Python
 
 ```python
-import pandas as pd
-from olap_swifter.builder import DynamicOLAPBuilder
-from olap_swifter.validator import SemanticDataValidator
+import duckdb
+from olap_swifter.schema.registry import SchemaRegistry
+from olap_swifter.schema.profile import load_dictionary, load_eda, merge_profile_and_dictionary
+from olap_swifter.schema.matcher import match_registry
+from olap_swifter.schema.synthetic import write_synthetic_dataset
+from olap_swifter.schema.materializer import WarehouseLoader
 
-# 1. Load a dataset and build the constellation schema in DuckDB
-df = pd.read_csv("resources/datasets/sample_amr_clinical.csv")
-builder = DynamicOLAPBuilder()
-builder.register_raw_data(df)
-builder.generate_olap_tables("constellation")
+registry = SchemaRegistry()
+variables = merge_profile_and_dictionary(load_eda("hiv_eda.yaml"), load_dictionary("hiv_catalogue.csv"))
+print(match_registry(variables, registry)["recommendation"])
 
-# 2. Check no column was dropped
-all_mapped, missing = builder.verify_no_variable_left_out()
-print(f"Zero variable loss: {all_mapped} (missing: {missing})")
+spec = registry.get("clinical_visit")
+dummy = write_synthetic_dataset(spec, "resources/datasets/synthetic", n_visits=200)
+report = WarehouseLoader(duckdb.connect("resources/warehouse_dummy.duckdb")).load(
+    spec, dummy["data"], "clinical_visit_dummy", is_synthetic=True)
+print(report["preflight"]["all_passed"], report["postload"]["all_passed"])
+```
 
-# 3. Check the totals still match the raw file
-validator = SemanticDataValidator(conn=builder.conn, raw_table="raw_clinical_records")
-sum_res = validator.validate_metric_sum("encounter_cost_ugx", "fact_encounters")
-print(f"Cost totals match: {sum_res.passed}")
+The orchestrator wraps the same path and adds join analysis, cube slicing,
+latency and the reviewer page:
 
-# 4. Ask a clinical question
-amr_df = builder.conn.execute("""
-    SELECT
-        organism_name,
-        ast_interpretation,
-        COUNT(*) AS count,
-        ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (PARTITION BY organism_name), 1) AS pct
-    FROM fact_lab_results
-    GROUP BY organism_name, ast_interpretation
-    ORDER BY organism_name, ast_interpretation;
-""").df()
-print(amr_df)
+```python
+from olap_swifter.orchestrator import MedicalOLAPOrchestrator
+orch = MedicalOLAPOrchestrator()
+orch.ingest_synthetic_dataset(num_visits=200, schema_id="amr_surveillance")
+result = orch.run_full_pipeline()
 ```
 
 ---
 
-## 6. Run it from the command line
+## 6. Command reference
 
-```bash
-# Build from the wide clinical dataset
-.venv/bin/python -m olap_swifter.cli build --csv resources/datasets/sample_wide_clinical.csv
+| Command | What it does |
+| :--- | :--- |
+| `source describe <name> --study --main-question --one-row-is --main-event` | `resources/inputs/<name>/description.yaml` (+ EDA if missing). Same as `describe(...)`. |
+| `source eda <csv or folder> --out <yaml/csv or folder> [--csv]` | Aggregate-only EDA (small categories suppressed), one per CSV; `.csv`/`--csv` for the minimal CSV form. |
+| `source values <dataset> <variable> [--by SITE_VAR] [--crosswalk NAME]` | Distinct labels of a vocabulary variable with rows and sites; merges new labels into a crosswalk. |
+| `source match --catalogue C --eda E [--description D]` | Scores against every schema: `fit` / `extend` / `new_schema`. |
+| `schema list` / `schema show <id>` | Registered schemas. |
+| `schema validate <yaml>` | Checks a schema written by the agent, including reused-table conflicts. |
+| `schema register <yaml> --dataset --catalogue --eda [--description] [--main-fact]` | Adds a new schema and attaches its dataset. |
+| `schema extend <patch> --dataset --catalogue --eda [--description] [--main-fact]` | Additive change in place, then attach. |
+| `schema attach <id> --dataset --catalogue --eda [--description] [--main-fact]` | Attach a dataset that fits as-is. |
+| `build [--csv C --schema S --source N] [--json]` | ETL + validation, join paths, slices, reviewer page. `--json`: counts only. |
+| `synth <id> [--out-dir] [--visits] [--max-rows]` | Dummy CSV + catalogue + EDA from a schema, capped at 400 rows. |
+| `etl <id> <csv> --source S --db DB [--synthetic] [--force]` | Stage → gates → load → checks. Counts only. |
+| `check <id> --source S --db DB` | Re-run all gates and checks for a loaded source. |
+| `constellation [--highlight DATASET] [--out md]` | The one warehouse view, a dataset highlighted. |
+| `profile [--schema]` | Join paths, deepest cube slices, latency. |
+| `review [--schema]` / `verify-ui` | Reviewer page / Playwright check of it. |
+| `ocr <image>` | OCR + de-identification (see [OCR.md](OCR.md); kept separate from the warehouse for now). |
 
-# Build from the AMR surveillance dataset
-.venv/bin/python -m olap_swifter.cli build --csv resources/datasets/sample_amr_clinical.csv
-
-# Build a synthetic benchmark of 500 visits
-.venv/bin/python -m olap_swifter.cli build --visits 500
-
-# Profile join paths, deepest cube slices and query latency
-.venv/bin/python -m olap_swifter.cli profile
-
-# Generate the interactive review page (model_reviewer.html)
-.venv/bin/python -m olap_swifter.cli review
-
-# Drive the review page with Playwright and capture screenshots
-.venv/bin/python -m olap_swifter.cli verify-ui
-```
+All are `.venv/bin/olap-swifter <command>`, or `.venv/bin/python -m olap_swifter.cli <command>`.
 
 ---
 
@@ -276,8 +414,9 @@ print(amr_df)
 Each module can be exercised on its own.
 
 ### The builder — `DynamicOLAPBuilder`
-Checks that columns get classified, nothing is dropped, and fields can be moved
-between tables.
+Keeps the field inventory shown in the reviewer page. In the schema workflow it
+is filled from the schema (`load_mappings_from_schema`); its keyword-based
+guessing below is only a hint for datasets with no catalogue yet.
 
 ```python
 import pandas as pd
@@ -303,29 +442,35 @@ Checks row counts and metric totals against the raw staging table.
 ```python
 from olap_swifter.validator import SemanticDataValidator
 
+builder.generate_olap_tables("constellation")
 validator = SemanticDataValidator(conn=builder.conn, raw_table="raw_clinical_records")
-
-count_res = validator.validate_row_counts("dim_visit")
-assert count_res.passed is True
 
 sum_res = validator.validate_metric_sum("encounter_cost_ugx", "fact_encounters")
 assert sum_res.passed is True
+
+ref_res = validator.validate_referential_integrity("fact_encounters", "dim_visit", "visit_id")
+assert ref_res.passed is True
 ```
 
 ### The cube and slicer — `MedicalCube`, `CubeSlicer`
 Checks multi-dimensional slicing, roll-ups and finding the deepest populated
-slices.
+slices, on dummy data from a registered schema.
 
 ```python
+from olap_swifter.olap.store import MedicalOLAPStore
 from olap_swifter.olap.cube import MedicalCube
 from olap_swifter.profiler.slicer import CubeSlicer
 
-cube = MedicalCube(conn=builder.conn)
-slicer = CubeSlicer(conn=builder.conn)
+store = MedicalOLAPStore()
+store.populate_synthetic_data(num_visits=200, schema_id="clinical_visit")
+cube = MedicalCube(conn=store.conn)
+slicer = CubeSlicer(conn=store.conn)
 
 slice_res = cube.slice_and_dice(
-    dimensions=["v.visit_type", "p.age_group"],
     measures=["COUNT(*) AS visit_count", "SUM(e.encounter_cost_ugx) AS total_cost"],
+    group_by_dimensions=["v.visit_type", "v.age_group"],
+    from_table="dim_visit v",
+    joins=["JOIN fact_encounters e ON v.visit_id = e.visit_id"],
 )
 assert len(slice_res) > 0
 
@@ -335,7 +480,7 @@ deep_slices = slicer.dig_deepest_slices(
         "JOIN dim_visit v ON e.visit_id = v.visit_id "
         "JOIN dim_patient p ON v.patient_id = p.patient_id"
     ),
-    candidate_dimensions=["v.visit_type", "p.age_group", "p.location_district"],
+    candidate_dimensions=["v.visit_type", "v.age_group", "p.gender"],
     metric_sql="COUNT(*)",
     min_depth=2,
     max_depth=3,
@@ -344,7 +489,8 @@ assert len(deep_slices) > 0
 ```
 
 ### The join graph and latency profiler — `JoinGraph`, `LatencyProfiler`
-Checks shortest join paths and query timings.
+Checks shortest join paths and query timings. Relationships come from the
+schema YAML.
 
 ```python
 from olap_swifter.profiler.join_graph import JoinGraph
@@ -352,13 +498,13 @@ from olap_swifter.olap.constellation import get_constellation_schema_metadata
 from olap_swifter.profiler.latency import LatencyProfiler
 
 graph = JoinGraph()
-graph.load_from_metadata(get_constellation_schema_metadata())
-path = graph.get_join_path("fact_encounters", "dim_facility")
-assert path == ["fact_encounters", "dim_facility"] or "dim_visit" in path
+graph.load_from_metadata(get_constellation_schema_metadata("clinical_visit"))
+assert graph.get_join_path("fact_prescriptions", "dim_facility") == \
+    ["fact_prescriptions", "dim_visit", "dim_facility"]
 
-profiler = LatencyProfiler(conn=builder.conn)
+profiler = LatencyProfiler(conn=store.conn)
 profile_res = profiler.profile_query("SELECT COUNT(*) FROM fact_encounters", label="Encounter Count")
-assert profile_res.avg_duration_ms >= 0.0
+assert profile_res.total_duration_ms >= 0.0
 ```
 
 ---
@@ -374,7 +520,7 @@ Everything at once:
 Or one module at a time:
 
 ```bash
-# Datasets, pre-flight gates and AMR S/I/R queries
+# Legacy keyword builder on the sample datasets
 .venv/bin/pytest -v resources/code_tools/olap_swifter/tests/test_dynamic_datasets.py
 
 # Zero variable loss and semantic validation
@@ -388,22 +534,24 @@ Or one module at a time:
 
 # The full end-to-end pipeline
 .venv/bin/pytest -v resources/code_tools/olap_swifter/tests/test_orchestrator.py
+
+# Schema workflow: registry, match, extend, dummy data, ETL gates, constellation view
+.venv/bin/pytest -v resources/code_tools/olap_swifter/tests/test_schema_workflow.py
 ```
 
 ---
 
 ## 9. The datasets
 
-All datasets live in **`resources/datasets/`**.
-
-| File | Rows | Columns | What is in it |
+| File | Rows | Columns | Schema |
 | :--- | :--- | :--- | :--- |
-| `sample_wide_clinical.csv` | 158 | 26 | Patient demographics, `substance_use_history`, `prior_antibiotic_use_30d`, `drug_administration_route`, diagnoses, encounters and costs. |
-| `sample_amr_clinical.csv` | 200 | 22 | Organism identification, susceptibility results (`S`, `I`, `R`), `mic_ug_ml`, `zone_diameter_mm`, `is_mdr_isolate`, prior antibiotic exposure. |
+| `sample_wide_clinical.csv` | 158 | 26 | `clinical_visit` (`fit`) |
+| `sample_amr_clinical.csv` | 200 | 22 | `amr_surveillance` (`fit`) |
 
-To add your own dataset, drop the CSV into `resources/datasets/` and pass it to
-the build command:
+Both samples match their schemas but **fail the preflight gates**, and they
+should: the generator that made them randomised values that ought to be stable.
 
-```bash
-.venv/bin/python -m olap_swifter.cli build --csv resources/datasets/your_dataset.csv
-```
+- `sample_amr_clinical.csv`: 49 of 60 patients have more than one gender; every patient has more than one home district.
+- `sample_wide_clinical.csv`: `prior_antibiotic_use_30d` and `substance_use_history` differ between rows of the same visit (28 and 32 visits); `drug_cost_ugx` has two values for the same visit and drug (12 cases).
+
+Use them to see the gates work. Use `synth` for a clean end-to-end run.

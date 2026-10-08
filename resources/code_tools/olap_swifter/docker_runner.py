@@ -39,8 +39,9 @@ class DockerRunner:
 
         docker_cmd = [
             "docker", "run", "--rm",
-            "-v", f"{self.workspace_dir}:/app",
-            "-w", "/app"
+            "-v", f"{self.workspace_dir}:/workspace",
+            "-w", "/workspace",
+            "-e", "PYTHONPATH=/workspace/resources/code_tools"
         ]
 
         if env:
