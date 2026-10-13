@@ -123,7 +123,7 @@ has already filled in. Optional answers are flat keywords:
 | `owner`, `period_covered` | `dataset.*` |
 | `title`, `study_type`, `secondary_questions` | `study.*` |
 | `main_measures`, `repeated_within_visit` | `unit_of_analysis.*` |
-| `direct_identifiers`, `quasi_identifiers`, `eda_labels_allowed` | `privacy.*` |
+| `direct_identifiers`, `quasi_identifiers`, `eda_labels_allowed`, `other_languages` | `privacy.*` (`other_languages` → `other_language_vocabulary`) |
 | `known_issues`, `instructions` | `known_issues`, `instructions_for_modeller` |
 
 The CLI equivalent is `$O source describe hiv_site_b --study ... --main-question ...
@@ -212,7 +212,7 @@ $O log dummy_tests --dataset hiv_site_b --passed 15 --total 15 --note "4 sub-age
 ```
 
 Fix and repeat until all pass. Test scripts and patches the agent writes go in
-`scratch_workspace/datasets/hiv_site_b/`.
+`scratch_workspace/datasets/hiv_site_b/` (`scripts/`, `patches/`, `tests/`), never in the repo.
 
 **Ask the user for the production data** before going on: every export must be in
 `scratch_workspace/inputs/hiv_site_b/data/` and match the catalogue and EDA.

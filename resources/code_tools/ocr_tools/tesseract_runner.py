@@ -24,13 +24,13 @@ from ocr_tools.docker_runner import DockerRunner
 class TesseractRunner:
     """Orchestrates Tesseract optical character recognition, cursive HTR, and Presidio redaction."""
 
-    def __init__(self, tesseract_cmd: Optional[str] = None):
+    def __init__(self, tesseract_cmd: Optional[str] = None, keep_terms=()):
         self.tesseract_cmd = tesseract_cmd or shutil.which("tesseract")
         if self.tesseract_cmd and pytesseract:
             pytesseract.pytesseract.tesseract_cmd = self.tesseract_cmd
         self.docker_runner = DockerRunner()
         self.cursive_recognizer = CursiveTextRecognizer(tesseract_cmd=self.tesseract_cmd)
-        self.anonymizer = OfflinePresidioAnonymizer()
+        self.anonymizer = OfflinePresidioAnonymizer(keep_terms=keep_terms)  # other-language vocabulary kept
 
     def is_local_available(self) -> bool:
         """Checks if tesseract binary is available on the host machine."""

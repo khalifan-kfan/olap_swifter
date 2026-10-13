@@ -153,6 +153,17 @@ The boundary between the **OCR toolchain** and the **OLAP Agent Skill** is stric
 - **Lexicon Normalization**: Expands Latin clinical abbreviations (`tds` -> Three Times Daily, `PO` -> Oral, `Inj` -> Injection) and matches against canonical antimicrobials (`Ceftriaxone`, `Amoxicillin`, `Ciprofloxacin`).
 
 ### Stage 3: Privacy & Redaction ([`privacy_tools/presidio_engine.py`](../code_tools/privacy_tools/presidio_engine.py))
+> **Limitation — English only.** Presidio's models and our patterns are English. On text in another language (Luganda, Swahili, French…) it can redact ordinary local words as names and miss names it does not recognise. Flag vocabulary recorded in another language in the dataset description (`privacy.other_language_vocabulary`) and pass it as `keep_terms` (`TesseractRunner(keep_terms=[...])`): those terms are kept as written, never anonymised. Names written in that language still need a person to check them.
+
+**Example.** The text `Next of kin: Bakazi ward. Patient Name: Nakato. Phone: 0772 123 456`, where "Bakazi" (Luganda for "women") is part of a ward name and is flagged with `keep_terms=["Bakazi"]`:
+
+| | Bakazi (flagged ward word) | Nakato (real name) | Phone |
+| :--- | :--- | :--- | :--- |
+| Without the flag | redacted as a name | redacted | redacted |
+| With the flag | kept | redacted | redacted |
+
+A flagged word is kept everywhere it appears, so never flag a word that is also used as a person's name.
+
 - **Presidio Analyzer**: Detects sensitive entities using spaCy and custom clinical pattern recognizers:
   - `Patient's Last Name: ...`, `First Name: ...` -> `<REDACTED_PATIENT_NAME>`
   - `Phone: +256 701...`, `0772...` -> `<REDACTED_PHONE>`

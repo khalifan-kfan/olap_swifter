@@ -209,6 +209,9 @@ Automating medical digitization and OLAP aggregation with AI introduces high-sta
 - **Misapplication to Real-Time Clinical Decision Support**:
   - `olap_swifter` is designed for **retrospective epidemiological research and health system reporting**, NOT real-time diagnostic triage or autonomous drug prescribing.
   - *Guardrail*: Outputs must never be fed directly into active bedside treatment algorithms without direct clinician review.
+- **De-identification is English-only (Presidio)**:
+  - Presidio's models are English. Text in another language can have ordinary local terms redacted as names, and real names missed.
+  - *Guardrail*: flag variables and terms recorded in another language in the dataset description (`privacy.other_language_vocabulary`) so they are kept as written and not anonymised, and have a person check names in that language.
 - **Re-Identification of Vulnerable Populations**:
   - Even without direct names, high-dimensional OLAP slicing combining facility + rare diagnosis + exact visit date + age group can re-identify marginalized patients (e.g., HIV, MDR-TB, stigmatized conditions).
   - *Guardrail*: Enforce k-anonymity thresholds ($k \ge 5$) on cube rollups and suppress small cell counts before exporting reports.

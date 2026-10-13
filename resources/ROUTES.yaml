@@ -37,7 +37,7 @@ routes:
   warehouse:        {path: scratch_workspace/warehouse/warehouse.duckdb, committed: false, what: "Production warehouse (real data)"}
   warehouse_dummy:  {path: scratch_workspace/warehouse/warehouse_dummy.duckdb, committed: false, what: "Dummy warehouse (proving a schema)"}
   dummy_data:       {path: scratch_workspace/dummy, committed: false, what: "Dummy CSV, catalogue and EDA per schema: dummy/<schema>/"}
-  dataset_outputs:  {path: scratch_workspace/datasets, committed: false, what: "Per dataset: constellation.md, patches/, tests/, notes"}
+  dataset_outputs:  {path: scratch_workspace/datasets, committed: false, what: "Per dataset: constellation.md, patches/, scripts/ (ETL and processing scripts), tests/, notes"}
   process_log:      {path: scratch_workspace/process_log.jsonl, committed: false, what: "Every tool step (counts only); feeds the review page"}
   review:           {path: scratch_workspace/review, committed: false, what: "Last build summary and UI screenshots behind the review page"}
   experience:       {path: scratch_workspace/experience, committed: false, what: "Past runs and reports the skill has learned from"}

@@ -48,6 +48,10 @@ privacy:
   direct_identifiers: []    # names, phone numbers, NINs... -> excluded from the warehouse
   quasi_identifiers: []     # DOB, village, rare conditions... -> coarsen or restrict
   eda_category_labels_allowed: true   # may the EDA show category labels (small cells are always hidden)?
+  other_language_vocabulary: []       # variables or terms recorded in a language other than English
+                                      #   (local ward, symptom or place words). De-identification is
+                                      #   English-only: these are kept, not anonymised, and names in
+                                      #   that language are checked by a person
 
 known_issues: ""            # recoding history, missing periods, site differences...
 

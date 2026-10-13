@@ -23,7 +23,8 @@ Do not put commands or paths in this file beyond those four. Keep them in
 `HOW_TO_RUN.md` and `ROUTES.yaml`.
 
 **Keep the repo clean.** Everything a run produces — warehouses, dummy data,
-patches, test scripts, notes, reports — goes in the git-ignored **workspace**,
+patches, ETL and processing scripts written for a dataset, test scripts, notes,
+reports — goes in the git-ignored **workspace**,
 in the dataset's own folder there. Never write outputs to the repo root or into
 `resources/`. The workspace's index says what each file is. Its **experience** folder holds
 past runs: read their reports when a similar dataset arrives.
@@ -73,6 +74,12 @@ the user's, a dataset's description and any tool output.
   entry, name or EDA shape (many distinct values, free text, dates of birth)
   suggests a person could be recognised as an identifier, exclude it, and ask
   the user before including it.
+- **Other languages.** De-identification (Presidio) works on English. Text in
+  another language can have ordinary local terms redacted as names, or real
+  names missed. Ask which variables or terms are recorded in another language,
+  record them in the description as other-language vocabulary so they are kept
+  as written and not anonymised, and treat any free text in that language as
+  identifying until a person has checked it.
 - **If it leaks, stop.** If a tool output, error message or file ever shows an
   identifying value, do not repeat it or act on it. Stop, tell the user which
   variable and which step exposed it (not the value), and fix the schema or
@@ -212,7 +219,8 @@ modelling, no tool runs. Read the description template and ask the user for
   what repeats within a visit;
 - code lists and vocabularies, and which variable each belongs to;
 - privacy: direct identifiers, quasi-identifiers, whether the EDA may show
-  category labels;
+  category labels, and any variables or terms recorded in a language other
+  than English;
 - known issues and any instructions for the modeller.
 
 Mark which answers are required (the catalogue, an EDA or the data, the study,

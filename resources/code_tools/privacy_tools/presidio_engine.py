@@ -2,6 +2,12 @@
 Offline Microsoft Presidio De-Identification Engine.
 Ensures patient privacy by detecting and masking patient info, contacts, and IDs
 while preserving hospital/facility names and clinical context for analytical OLAP processing.
+
+Limitation: the models and patterns are English. On text in another language
+Presidio can redact ordinary local terms as names and miss names it does not
+recognise. Vocabulary recorded in another language (the description's
+privacy.other_language_vocabulary) is passed as keep_terms and never redacted;
+names written in that language still need a person to check them.
 """
 
 import re
@@ -33,7 +39,9 @@ class OfflinePresidioAnonymizer:
     and Identifiers (MRN, NIN), while ignoring hospital/facility metadata.
     """
 
-    def __init__(self):
+    def __init__(self, keep_terms=()):
+        # Flagged other-language vocabulary: kept as written, never redacted.
+        self.keep_terms = {t.strip().lower() for t in keep_terms if t and t.strip()}
         if PRESIDIO_AVAILABLE:
             try:
                 nlp_engine = SpacyNlpEngine()
@@ -109,6 +117,8 @@ class OfflinePresidioAnonymizer:
     def _is_facility_name(self, text_segment: str) -> bool:
         """Determines if a matched text segment represents a hospital/facility name."""
         low = text_segment.lower()
+        if any(re.search(rf"\b{re.escape(t)}\b", low) for t in self.keep_terms):
+            return True  # flagged other-language vocabulary
         return any(kw in low for kw in FACILITY_EXCLUSION_KEYWORDS)
 
     def anonymize_text(self, text: str) -> Dict[str, Any]:

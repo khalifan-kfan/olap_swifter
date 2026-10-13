@@ -46,7 +46,8 @@ def blank_description() -> Dict[str, Any]:
         "unit_of_analysis": {"one_row_is": "", "main_event": "", "main_measures": [],
                              "repeated_within_visit": []},
         "codes_and_vocabularies": [],
-        "privacy": {"direct_identifiers": [], "quasi_identifiers": [], "eda_category_labels_allowed": True},
+        "privacy": {"direct_identifiers": [], "quasi_identifiers": [], "eda_category_labels_allowed": True,
+                    "other_language_vocabulary": []},
         "known_issues": "",
         "instructions_for_modeller": "",
         # filled by the skill
@@ -72,6 +73,7 @@ USER_FIELDS = {
     "direct_identifiers": ("privacy", "direct_identifiers"),
     "quasi_identifiers": ("privacy", "quasi_identifiers"),
     "eda_labels_allowed": ("privacy", "eda_category_labels_allowed"),
+    "other_languages": ("privacy", "other_language_vocabulary"),
     "known_issues": ("known_issues", None),
     "instructions": ("instructions_for_modeller", None),
 }
