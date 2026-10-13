@@ -1,4 +1,0 @@
-# Dataset inputs can hold real patient data: never commit them.
-*
-!.gitignore
-!README.md
