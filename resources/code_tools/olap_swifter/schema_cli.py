@@ -14,6 +14,8 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
+from olap_swifter.feedback.worklog import STAGES, log_step
+from olap_swifter.paths import route, workspace_path
 from olap_swifter.schema.constellation_view import build_view, render_markdown
 from olap_swifter.schema.describe import describe
 from olap_swifter.schema.extender import attach_dataset, extend_schema
@@ -53,6 +55,18 @@ def _fail(msg: str, as_json: bool):
 def _require(path: str, label: str, as_json: bool):
     if not path or not Path(path).exists():
         _fail(f"{label} not found: {path!r}", as_json)
+
+
+def _dataset_from(path: str) -> Optional[str]:
+    """Dataset name of a path inside the inputs folder (<inputs>/<name>/...)."""
+    try:
+        return Path(path).resolve().relative_to(default_inputs_dir().resolve()).parts[0]
+    except (ValueError, IndexError):
+        return None
+
+
+def _db(db: Optional[str], synthetic: bool) -> str:
+    return db or str(workspace_path("warehouse_dummy" if synthetic else "warehouse"))
 
 
 def _dataset_variables(catalogue: str, eda: str) -> List[Dict[str, Any]]:
@@ -155,6 +169,7 @@ def schema_register(
         out = _attach_and_save(spec, dataset, catalogue, eda, description, main_fact)
     except (SchemaSpecError, yaml.YAMLError) as e:
         _fail(str(e), as_json)
+    log_step("model", True, out["dataset"], out["schema"], decision="new_schema", columns=len(out["dataset_columns"]))
     _emit(out, as_json, lambda o: console.print(o))
 
 
@@ -177,6 +192,7 @@ def schema_extend(
     except (SchemaSpecError, KeyError, yaml.YAMLError) as e:
         _fail(str(e), as_json)
     out["changelog"] = spec.changelog[-1]
+    log_step("model", True, out["dataset"], out["schema"], decision="extend", columns=len(out["dataset_columns"]))
     _emit(out, as_json, lambda o: console.print(o))
 
 
@@ -197,6 +213,7 @@ def schema_attach(
         out = _attach_and_save(SchemaRegistry().get(schema_id), dataset, catalogue, eda, description, main_fact)
     except (SchemaSpecError, KeyError) as e:
         _fail(str(e), as_json)
+    log_step("model", True, out["dataset"], out["schema"], decision="fit", columns=len(out["dataset_columns"]))
     _emit(out, as_json, lambda o: console.print(o))
 
 
@@ -230,27 +247,29 @@ def source_eda(
 
 @source_app.command("describe")
 def source_describe(
-    name: str = typer.Argument(..., help="Dataset name = its folder under resources/inputs/"),
+    name: str = typer.Argument(..., help="Dataset name = its folder under scratch_workspace/inputs/"),
     study: str = typer.Option("", help="2-5 sentences: population, setting, purpose"),
     main_question: str = typer.Option("", help="The primary analysis the warehouse must answer"),
     one_row_is: str = typer.Option("", help="What one row of the export represents"),
     main_event: str = typer.Option("", help="The event counted or measured (becomes the main fact)"),
     as_json: bool = typer.Option(False, "--json"),
 ):
-    """Writes resources/inputs/<name>/description.yaml (and the EDA if missing). Same as `describe(...)`."""
+    """Writes scratch_workspace/inputs/<name>/description.yaml (and the EDA if missing). Same as `describe(...)`."""
     try:
         result = describe(name, study, main_question, one_row_is, main_event, quiet=True)
     except (FileNotFoundError, ValueError) as e:
         _fail(str(e), as_json)
+    log_step("describe", not result["missing_required"], name, data_files=len(result["data_files"]),
+             missing_required=len(result["missing_required"]))
     _emit(result, as_json, lambda o: console.print(o))
 
 
 @source_app.command("values")
 def source_values(
-    dataset: str = typer.Argument(..., help="Dataset name (its folder under resources/inputs/)"),
+    dataset: str = typer.Argument(..., help="Dataset name (its folder under scratch_workspace/inputs/)"),
     variable: str = typer.Argument(..., help="Vocabulary variable to list, e.g. ward"),
     by: Optional[str] = typer.Option(None, help="Also list where each label is seen, e.g. hospital_code"),
-    crosswalk: Optional[str] = typer.Option(None, help="Merge new labels into resources/schemas/crosswalks/<name>.yaml"),
+    crosswalk: Optional[str] = typer.Option(None, help="Merge new labels into scratch_workspace/schemas/crosswalks/<name>.yaml"),
     as_json: bool = typer.Option(False, "--json"),
 ):
     """Distinct labels of a vocabulary variable (ward, unit, specimen...) with counts, for a crosswalk."""
@@ -265,6 +284,8 @@ def source_values(
     if crosswalk:
         out["crosswalk"] = merge_crosswalk(crosswalk_path(SchemaRegistry().dir, crosswalk), crosswalk,
                                            variable, out["labels"])
+        log_step("crosswalk", out["crosswalk"]["unmapped"] == 0, dataset, note=f"{variable} -> {crosswalk}",
+                 labels=out["distinct"], unmapped=out["crosswalk"]["unmapped"])
 
     def render(o):
         t = Table(title=f"{o['variable']}: {o['distinct']} labels in {o['rows_with_value']} rows")
@@ -301,6 +322,8 @@ def source_match(
     else:
         warnings.append("no dataset description given: the main fact, grain and visit definition are guesses")
     result["warnings"] = warnings
+    log_step("match", True, _dataset_from(catalogue), result["best_schema"],
+             recommendation=result["recommendation"])
 
     def render(r):
         console.print(f"[bold]Recommendation:[/bold] {r['recommendation']}  (best: {r['best_schema']}, "
@@ -323,7 +346,7 @@ def source_match(
 
 def synth(
     schema_id: str,
-    out_dir: str = typer.Option("resources/datasets/synthetic", help="Directory for the dummy CSV, catalogue and EDA"),
+    out_dir: Optional[str] = typer.Option(None, help="Directory for the dummy CSV, catalogue and EDA (default: workspace dummy/<schema>/)"),
     visits: int = typer.Option(200, help="Number of dummy visits (fewer if the row cap is reached)"),
     max_rows: Optional[int] = typer.Option(None, help="Row cap; defaults to dummy_max_rows (400). Raise only when a test needs volume"),
     seed: int = typer.Option(7),
@@ -331,10 +354,12 @@ def synth(
 ):
     """Generates capped dummy data (plus its catalogue and EDA) from a schema. Prints counts, never rows."""
     cfg = SchemaRegistry().config()
+    out_dir = out_dir or str(workspace_path("dummy_data") / schema_id)
     out = write_synthetic_dataset(SchemaRegistry().get(schema_id), out_dir, n_visits=visits, seed=seed,
                                   max_categories=int(cfg["eda_max_categories"]),
                                   min_category_count=int(cfg["eda_min_category_count"]),
                                   max_rows=max_rows or int(cfg["dummy_max_rows"]))
+    log_step("dummy_data", True, schema=schema_id, rows=out["rows"], visits=out["visits"])
     _emit(out, as_json, lambda o: console.print(o))
 
 
@@ -342,7 +367,7 @@ def etl(
     schema_id: str,
     csv_path: str,
     source: str = typer.Option(..., help="Name for this data source (becomes its source_id)"),
-    db: str = typer.Option(..., help="DuckDB warehouse file; keep dummy and real warehouses separate"),
+    db: Optional[str] = typer.Option(None, help="DuckDB warehouse file (default: the workspace warehouse, or the dummy one with --synthetic)"),
     synthetic: bool = typer.Option(False, help="Mark the source as dummy data"),
     force: bool = typer.Option(False, help="Load even if preflight gates fail"),
     as_json: bool = typer.Option(False, "--json"),
@@ -350,7 +375,7 @@ def etl(
     """Stages, gates, loads and checks one source. Prints counts only, never rows."""
     _require(csv_path, "CSV", as_json)
     spec = SchemaRegistry().get(schema_id)
-    conn = duckdb.connect(db)
+    conn = duckdb.connect(_db(db, synthetic))
     try:
         report = WarehouseLoader(conn).load(spec, csv_path, source, is_synthetic=synthetic, force=force)
     finally:
@@ -370,6 +395,12 @@ def etl(
                 t.add_row(x["table"], x["status"], str(x.get("rows", x.get("entities_in_source", x.get("reason")))))
             console.print(t)
             _print_checks(r["postload"], "Post-load checks")
+    failed = [r for part in ("preflight", "postload") for r in (report.get(part) or {}).get("results", [])
+              if r["severity"] == "error" and not r["passed"]]
+    log_step("dummy_load" if synthetic else "production_load",
+             report["loaded"] and report.get("postload", {}).get("all_passed", False),
+             spec.dataset_name_for_source(source), schema_id, note=source, failed_checks=len(failed),
+             forced=bool(force))
     _emit(report, as_json, render)
     if not report["loaded"] or not report.get("postload", {}).get("all_passed", False):
         raise typer.Exit(code=1)
@@ -378,19 +409,24 @@ def etl(
 def check(
     schema_id: str,
     source: str = typer.Option(..., help="Source name or id that was loaded"),
-    db: str = typer.Option(...),
+    db: Optional[str] = typer.Option(None, help="Warehouse file (default: the workspace warehouse, or the dummy one with --synthetic)"),
+    synthetic: bool = typer.Option(False, help="Check the dummy warehouse"),
     as_json: bool = typer.Option(False, "--json"),
 ):
     """Re-runs every gate and post-load check for a loaded source."""
-    conn = duckdb.connect(db)
+    spec = SchemaRegistry().get(schema_id)
+    conn = duckdb.connect(_db(db, synthetic))
     try:
-        out = run_checks(conn, SchemaRegistry().get(schema_id), source_id_for(source))
+        out = run_checks(conn, spec, source_id_for(source))
     finally:
         conn.close()
 
     def render(o):
         _print_checks(o["preflight"], "Preflight gates")
         _print_checks(o["postload"], "Post-load checks")
+    log_step("dummy_load" if synthetic else "production_load",
+             out["preflight"]["all_passed"] and out["postload"]["all_passed"],
+             spec.dataset_name_for_source(source), schema_id, note=f"re-check {source}")
     _emit(out, as_json, render)
     if not (out["preflight"]["all_passed"] and out["postload"]["all_passed"]):
         raise typer.Exit(code=1)
@@ -398,12 +434,17 @@ def check(
 
 def constellation(
     highlight: Optional[str] = typer.Option(None, help="Dataset whose variables to highlight"),
-    out: Optional[str] = typer.Option(None, help="Write the Markdown view (with a Mermaid diagram) here"),
+    out: Optional[str] = typer.Option(None, help="Write the Markdown view here (default with --highlight: the dataset's workspace folder)"),
     as_json: bool = typer.Option(False, "--json"),
 ):
     """One view of every schema merged into the warehouse constellation, a dataset highlighted."""
     view = build_view(SchemaRegistry(), highlight=highlight)
     md = render_markdown(view)
+    if highlight and not out:
+        out = str(workspace_path("dataset_outputs") / highlight / "constellation.md")
+    if highlight:
+        log_step("report", True, highlight, tables=len(view["highlighted_tables"]),
+                 columns=len(view["highlighted_columns"]))
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_text(md, encoding="utf-8")
@@ -414,6 +455,22 @@ def constellation(
                       f"({len(view['highlighted_columns'])} highlighted columns)")
 
 
+def log(
+    stage: str = typer.Argument(..., help="One of: " + ", ".join(STAGES)),
+    dataset: str = typer.Option(..., help="Dataset the step was for"),
+    failed: bool = typer.Option(False, "--failed", help="The step failed"),
+    note: str = typer.Option("", help="Short summary (counts only, never data values)"),
+    passed: Optional[int] = typer.Option(None, help="Tests passed"),
+    total: Optional[int] = typer.Option(None, help="Tests run"),
+):
+    """Records a step the tools cannot see themselves (e.g. TEST.md sub-agent results) on the review page."""
+    if stage not in STAGES:
+        _fail(f"unknown stage {stage!r}; use one of {', '.join(STAGES)}", False)
+    counts = {"passed": f"{passed}/{total}"} if passed is not None and total is not None else {}
+    log_step(stage, not failed, dataset, note=note, **counts)
+    console.print(f"[green]✓ logged {stage}[/green] -> {route('model_reviewer')}")
+
+
 def register(app: typer.Typer):
     app.add_typer(schema_app, name="schema")
     app.add_typer(source_app, name="source")
@@ -421,3 +478,4 @@ def register(app: typer.Typer):
     app.command()(etl)
     app.command()(check)
     app.command()(constellation)
+    app.command()(log)

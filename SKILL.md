@@ -12,13 +12,21 @@ report back.
 
 It is the *what* and *why*. The *how* lives in companion files:
 
-- **[HOW_TO_RUN.md](HOW_TO_RUN.md)** — every command, file path and file format.
+- **[HOW_TO_RUN.md](resources/instructions/HOW_TO_RUN.md)** — every command, file path and file format.
 - **[TEST.md](TEST.md)** — the sub-agent test mandates and their pass conditions.
 - **`resources/templates/dataset_description.yaml`** — what to ask the user, and
   the sections the agent fills in itself.
+- **[`resources/ROUTES.yaml`](resources/ROUTES.yaml)** — the routing key: where
+  every resource, input and output lives, by name.
 
-Do not put commands or paths in this file beyond those three. Keep them in
-`HOW_TO_RUN.md`.
+Do not put commands or paths in this file beyond those four. Keep them in
+`HOW_TO_RUN.md` and `ROUTES.yaml`.
+
+**Keep the repo clean.** Everything a run produces — warehouses, dummy data,
+patches, test scripts, notes, reports — goes in the git-ignored **workspace**,
+in the dataset's own folder there. Never write outputs to the repo root or into
+`resources/`. The workspace's index says what each file is. Its **experience** folder holds
+past runs: read their reports when a similar dataset arrives.
 
 Nothing here is specific to one disease or one dataset. AMR and HIV appear only
 as examples.
@@ -190,11 +198,30 @@ graph TD
     I -- all pass --> K[8. Report back with the highlighted constellation]
 ```
 
-### Step 1 — Collect the inputs
-The agent runs this step for the user. Ask them to put the catalogue (and the
-data or an EDA, and any code lists) in the dataset's inputs folder, and to
-answer four questions: the study, the main question, what one row is, and the
-main event. Then write the description with the one-line `describe(...)`
+### Step 1 — Collect the inputs (first, before anything else)
+When someone starts with this skill, do nothing else first: no matching, no
+modelling, no tool runs. Read the description template and ask the user for
+**everything in its user section in one message**, so they answer once:
+
+- the dataset's name and owner, and the period it covers;
+- its files: catalogue(s), data export(s) or EDA(s), code lists — placed in
+  the dataset's inputs folder (say where; offer the folder layout);
+- the study: what it is (population, setting, purpose), its type, the main
+  question, other questions it should answer;
+- the unit of analysis: what one row is, the main event, the main measures,
+  what repeats within a visit;
+- code lists and vocabularies, and which variable each belongs to;
+- privacy: direct identifiers, quasi-identifiers, whether the EDA may show
+  category labels;
+- known issues and any instructions for the modeller.
+
+Mark which answers are required (the catalogue, an EDA or the data, the study,
+the main question, what one row is, the main event); the rest may be "don't
+know". Wait for the answers. Do not guess them, and do not fill the skill's own
+sections (visit, entities, relationship to existing) from the user — those are
+modelled in Step 2.
+
+Then write the description with the one-line `describe(...)`
 helper. It finds the files in the folder, makes the EDA from the data when
 there is none (without showing the agent any rows), lists the code lists with
 their sizes only, and writes the template's user sections. If the user would
@@ -309,7 +336,10 @@ Repeat until the ETL loads, the build completes and every TEST.md mandate
 passes, or until only data issues the user has to decide on remain.
 
 ### Step 8 — Report back when it is done
-Report once, at the end, with:
+The tools keep a process log and a review page as they run: schema art with
+this dataset's tables filled, every step done so far, the field mapping and
+the checks. Record the TEST.md results there too (the tools cannot see them).
+Point the user to the review page, and report once, at the end, with:
 
 - the constellation view with this dataset's tables and variables highlighted,
   and the main fact it answers to;
@@ -345,4 +375,4 @@ Report once, at the end, with:
 
 Everything practical — the commands for each step, the schema and patch file
 formats, the template, and the test suite — is in
-**[HOW_TO_RUN.md](HOW_TO_RUN.md)**.
+**[HOW_TO_RUN.md](resources/instructions/HOW_TO_RUN.md)**.

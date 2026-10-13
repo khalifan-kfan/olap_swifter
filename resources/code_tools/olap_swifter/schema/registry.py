@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
+from olap_swifter.paths import route
 from olap_swifter.schema.spec import SchemaSpec, SchemaSpecError, attach_crosswalks, load_spec_file, parse_spec
 
 DEFAULT_CONFIG: Dict[str, Any] = {
@@ -31,20 +32,15 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
 
 def default_schemas_dir() -> Path:
-    """`$OLAP_SWIFTER_SCHEMAS_DIR`, else `./resources/schemas`, else the repo's resources/schemas."""
+    """`$OLAP_SWIFTER_SCHEMAS_DIR`, else the `schemas` route (resources/ROUTES.yaml)."""
     env = os.environ.get("OLAP_SWIFTER_SCHEMAS_DIR")
-    if env:
-        return Path(env)
-    cwd_candidate = Path.cwd() / "resources" / "schemas"
-    if cwd_candidate.is_dir():
-        return cwd_candidate
-    return Path(__file__).resolve().parents[3] / "schemas"
+    return Path(env) if env else route("schemas")
 
 
 def default_inputs_dir() -> Path:
-    """`$OLAP_SWIFTER_INPUTS_DIR`, else `inputs/` beside the schemas directory."""
+    """`$OLAP_SWIFTER_INPUTS_DIR`, else the `inputs` route."""
     env = os.environ.get("OLAP_SWIFTER_INPUTS_DIR")
-    return Path(env) if env else default_schemas_dir().parent / "inputs"
+    return Path(env) if env else route("inputs")
 
 
 class SchemaRegistry:
@@ -55,7 +51,8 @@ class SchemaRegistry:
 
     def config(self) -> Dict[str, Any]:
         cfg = dict(DEFAULT_CONFIG)
-        path = self.dir / "config.yaml"
+        path = self.dir / "config.yaml"  # a registry may carry its own; else the shared one
+        path = path if path.exists() else route("config")
         if path.exists():
             cfg.update(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
         return cfg

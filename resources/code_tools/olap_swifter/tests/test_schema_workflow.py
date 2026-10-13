@@ -1,7 +1,7 @@
 """
 Tests for the schema workflow: registry, matching, additive extension,
 dataset attachment, schema-driven dummy data, ETL gates and checks, and the
-constellation view. Runs on a temporary copy of resources/schemas.
+constellation view. Runs on a temporary copy of tests/fixtures/schemas.
 """
 
 import csv
@@ -22,8 +22,9 @@ from olap_swifter.schema.registry import SchemaRegistry
 from olap_swifter.schema.spec import SchemaSpecError, parse_spec
 from olap_swifter.schema.synthetic import write_synthetic_dataset
 
-SEED_DIR = Path(__file__).resolve().parents[3] / "schemas"
-DATASETS = Path(__file__).resolve().parents[3] / "datasets"
+SEED_DIR = Path(__file__).resolve().parent / "fixtures" / "schemas"
+RESOURCES = Path(__file__).resolve().parents[3]
+DATASETS = RESOURCES / "datasets"
 
 HIV_PATCH = {
     "base": "clinical_visit",
@@ -207,7 +208,7 @@ def test_describe_from_inputs_folder(registry, hiv_files, tmp_path):
     from olap_swifter.schema.describe import blank_description
     from olap_swifter.schema.profile import load_description
 
-    template = yaml.safe_load((SEED_DIR.parent / "templates" / "dataset_description.yaml").read_text())
+    template = yaml.safe_load((RESOURCES / "templates" / "dataset_description.yaml").read_text())
     shape = lambda d: {k: sorted(v) if isinstance(v, dict) else None for k, v in d.items()}  # noqa: E731
     assert shape(template) == shape(blank_description())
 

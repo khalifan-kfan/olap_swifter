@@ -43,6 +43,13 @@ def build(
             data_stats = orch.ingest_synthetic_dataset(num_visits=visits, schema_id=schema or "clinical_visit")
         res = orch.run_full_pipeline()
     except ValueError as e:
+        from olap_swifter.feedback.worklog import log_step
+        from olap_swifter.schema.registry import SchemaRegistry
+        try:
+            ds = SchemaRegistry().get(schema).dataset_name_for_source(source) if schema and source else None
+        except KeyError:
+            ds = None
+        log_step("production_build" if csv else "dummy_build", False, ds, schema, note=str(e)[:160])
         if as_json:
             print(json.dumps({"ok": False, "error": str(e)}, indent=2))
         else:
@@ -50,6 +57,15 @@ def build(
         raise typer.Exit(code=1)
 
     val = res["semantic_validation"]
+    from pathlib import Path
+    from olap_swifter.feedback.worklog import log_step, save_build
+    from olap_swifter.paths import route
+    dummy = not csv or route("dummy_data").resolve() in Path(csv).resolve().parents
+    save_build(res["review"])
+    spec = orch.spec
+    log_step("dummy_build" if dummy else "production_build", res["zero_variable_loss"] and val["all_passed"],
+             spec.dataset_name_for_source(data_stats["source_id"]), spec.schema_id,
+             note=data_stats["source_id"], checks=f"{val['passed']}/{val['total_tests']}")
     if as_json:
         # Counts only: no slice labels or values, which could expose small cells of real data.
         print(json.dumps({
@@ -119,12 +135,10 @@ def profile(schema: str = typer.Option("clinical_visit", help="Registered schema
 
 
 @app.command()
-def review(schema: str = typer.Option("clinical_visit", help="Registered schema id")):
-    """Generates and displays the path to the interactive model reviewer HTML."""
-    orch = MedicalOLAPOrchestrator()
-    orch.ingest_synthetic_dataset(num_visits=200, schema_id=schema)
-    res = orch.run_full_pipeline()
-    console.print(f"[bold green]Interactive Reviewer generated:[/bold green] file://{res['reviewer_html']}")
+def review(dataset: Optional[str] = typer.Option(None, help="Dataset to review (default: the latest one worked on)")):
+    """Re-renders model_reviewer.html: schema art, process done so far, last build's fields and checks."""
+    from olap_swifter.feedback.worklog import render_review
+    console.print(f"[bold green]Reviewer:[/bold green] file://{render_review(dataset=dataset)}")
 
 
 @app.command()
@@ -153,7 +167,7 @@ def ocr(
     anonymize: bool = typer.Option(True, help="Enable Presidio patient PII & contact redaction")
 ):
     """Executes OCR layer: Tesseract + Tail-end Cursive HTR + Presidio privacy + Structured field extraction."""
-    from olap_swifter.ocr.tesseract_runner import TesseractRunner
+    from ocr_tools.tesseract_runner import TesseractRunner
     console.print(Panel.fit(f"[bold cyan]Clinical OCR Extraction & De-Identification[/bold cyan]\nImage: [yellow]{image}[/yellow]"))
     runner = TesseractRunner()
     result = runner.process_full_pipeline(image, run_cursive=cursive, anonymize=anonymize)

@@ -5,14 +5,14 @@ real) through the schema ETL, then validate, profile joins, slice the cube and
 render the reviewer. Every table name, join and dimension comes from the
 schema YAML, so the pipeline is the same for AMR, HIV or any other study.
 
-OCR (olap_swifter.ocr) is deliberately not wired in here yet; it will feed the
+OCR (the separate ocr_tools package) is deliberately not wired in here yet; it will feed the
 warehouse later as another data source.
 """
 
 from typing import Any, Dict, List, Optional
 
 from olap_swifter.builder import DynamicOLAPBuilder
-from olap_swifter.feedback.interactive_app import generate_interactive_html
+from olap_swifter.feedback.worklog import render_review
 from olap_swifter.olap.store import DEFAULT_SCHEMA, MedicalOLAPStore
 from olap_swifter.profiler.join_graph import JoinGraph
 from olap_swifter.profiler.latency import LatencyProfiler
@@ -147,14 +147,10 @@ class MedicalOLAPOrchestrator:
 
         fields_inv = self.builder.get_field_inventory()
         slices_dict = [s.to_dict() for s in deep_slices[:5]]
-        html_file = generate_interactive_html(
-            fields=fields_inv,
-            validation_summary=val_summary,
-            join_analysis=join_analysis,
-            deep_slices=slices_dict,
-            output_path="model_reviewer.html",
-            table_options=sorted(self.spec.tables),
-        )
+        review = {"schema": self.spec.schema_id, "source_id": self.source_id, "fields": fields_inv,
+                  "validation": val_summary, "join_analysis": join_analysis, "deep_slices": slices_dict,
+                  "table_options": sorted(self.spec.tables)}
+        html_file = render_review(build=review, dataset=self.spec.dataset_name_for_source(self.source_id))
 
         return {
             "schema": self.spec.schema_id,
@@ -168,4 +164,5 @@ class MedicalOLAPOrchestrator:
             "deepest_slice": slices_dict[0] if slices_dict else None,
             "benchmark": benchmark,
             "reviewer_html": html_file,
+            "review": review,
         }

@@ -15,7 +15,7 @@ invent a check and compute its correct answer without anyone supplying one.
 tests listed afterwards are worked examples of that method, not its limit.
 
 Read [SKILL.md](SKILL.md) for the modelling rules. Read
-[HOW_TO_RUN.md](HOW_TO_RUN.md) for commands and environment.
+[HOW_TO_RUN.md](resources/instructions/HOW_TO_RUN.md) for commands and environment.
 
 ---
 

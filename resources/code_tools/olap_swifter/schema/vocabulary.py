@@ -4,7 +4,7 @@ Sites name the same thing differently ("Paediatric", "Pediatric", "Children's
 Ward", "Ward 4B"). The warehouse keeps each site's own label and adds a
 standard category through a crosswalk file the skill writes:
 
-    resources/schemas/crosswalks/<name>.yaml
+    scratch_workspace/schemas/crosswalks/<name>.yaml
     entries:
       - {value: Pediatric, maps_to: Paediatric}
       - {value: Ward 4B, scope: HOSP-02, maps_to: Surgical}   # one site's own wording
@@ -92,7 +92,8 @@ def merge_crosswalk(path: Path, name: str, from_variable: str, labels: List[Dict
     data = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
     data = data or {}
     entries = list(data.get("entries") or [])
-    known = {normalize_label(e["value"]) for e in entries if not e.get("scope")}
+    # A label with only site-scoped entries is known too; a new site using it is caught by the load gate.
+    known = {normalize_label(e["value"]) for e in entries}
     added = 0
     by_label = {normalize_label(l["value"]): l for l in labels}
     for e in entries:  # refresh counts on existing general entries

@@ -1,6 +1,6 @@
 """
 Dataset Description in one line.
-Every dataset's inputs live in one folder, `resources/inputs/<name>/`; a
+Every dataset's inputs live in one folder, `scratch_workspace/inputs/<name>/`; a
 dataset often comes as several files, so each kind of input is a folder:
 
     catalogue/        (required) one or more data dictionaries (.csv / .yaml / .yml)

@@ -37,3 +37,4 @@ olap-swifter = "olap_swifter.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["olap_swifter*", "ocr_tools*", "privacy_tools*"]

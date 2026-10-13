@@ -30,11 +30,12 @@ must link to a visit, and every total must still match the original file.
 | File | Read it when |
 | :--- | :--- |
 | **[SKILL.md](SKILL.md)** | You want the rules and the thinking — what a good model looks like and why. |
-| **[HOW_TO_RUN.md](HOW_TO_RUN.md)** | You want to actually run something: commands, SQL, code, tests. |
+| **[HOW_TO_RUN.md](resources/instructions/HOW_TO_RUN.md)** | You want to actually run something: commands, SQL, code, tests. |
 | **[TEST.md](TEST.md)** | You want the sub-agent test prompts and their pass conditions. |
 
 `SKILL.md` deliberately contains no commands. `HOW_TO_RUN.md` deliberately
-contains all of them.
+contains all of them. [`resources/ROUTES.yaml`](resources/ROUTES.yaml) says where
+every file lives.
 
 ---
 
@@ -50,14 +51,14 @@ the description, and switches it on when your request matches.
 ```bash
 cd /Users/muwongekhalifan/Desktop/dexta_s_lab/olap_swifter
 mkdir -p .agents/skills/medical-olap-orchestrator
-cp SKILL.md HOW_TO_RUN.md TEST.md .agents/skills/medical-olap-orchestrator/
+cp SKILL.md TEST.md resources/instructions/HOW_TO_RUN.md .agents/skills/medical-olap-orchestrator/
 ```
 
 **For every project on this machine:**
 
 ```bash
 mkdir -p ~/.gemini/config/skills/medical-olap-orchestrator
-cp SKILL.md HOW_TO_RUN.md TEST.md ~/.gemini/config/skills/medical-olap-orchestrator/
+cp SKILL.md TEST.md resources/instructions/HOW_TO_RUN.md ~/.gemini/config/skills/medical-olap-orchestrator/
 ```
 
 The folder must be named `skills/<skill-name>/` and must contain `SKILL.md`.
@@ -75,8 +76,12 @@ The skill switches itself on when your request matches its description. Plain
 language is enough:
 
 ```
-Build a medical OLAP warehouse from resources/datasets/sample_amr_clinical.csv
+I have a new dataset to build a medical OLAP warehouse from
 ```
+
+Before anything else, the skill asks you for everything in the dataset
+description template (the study, the main question, what one row is, the
+files, privacy) in one message, and tells you where to put the files.
 
 ```
 Model this clinical CSV as a fact constellation and prove no column was lost
@@ -126,7 +131,7 @@ You do not need Gemini at all. The same warehouse can be built by hand:
 ```
 
 Full details, including the raw DuckDB SQL, are in
-[**HOW_TO_RUN.md**](HOW_TO_RUN.md).
+[**HOW_TO_RUN.md**](resources/instructions/HOW_TO_RUN.md).
 
 ---
 
@@ -144,19 +149,33 @@ pip install -e resources/code_tools
 
 ```
 olap_swifter/
-├── SKILL.md                      # The rules and the thinking
-├── HOW_TO_RUN.md                 # Every command and code example
-├── TEST.md                       # Sub-agent test definitions
-├── README.md                     # This file
-├── model_reviewer.html           # Interactive review page
-└── resources/
-    ├── datasets/                 # All CSV datasets live here
-    ├── images/                   # Sample scanned clinical forms
-    └── code_tools/
-        └── olap_swifter/         # builder, validator, cube, profiler, CLI, tests
+├── SKILL.md                  # The rules and the thinking
+├── TEST.md                   # Sub-agent test definitions
+├── README.md                 # This file
+├── docker-compose.yml        # Run the code tools in a container
+├── model_reviewer.html       # Review page, rewritten by the tools (git-ignored)
+├── resources/
+│   ├── ROUTES.yaml           # Routing key: where every resource lives, by name
+│   ├── instructions/         # HOW_TO_RUN.md, OCR.md, ocr_assets/ (diagrams, sample forms)
+│   ├── config.yaml           # Generic thresholds (match, EDA privacy, dummy cap)
+│   ├── templates/            # Dataset description template
+│   ├── datasets/             # Sample CSVs for the tool tests (git-ignored)
+│   └── code_tools/
+│       ├── olap_swifter/     # Warehouse: schema, ETL, checks, cube, reviewer, CLI, tests
+│       ├── ocr_tools/        # OCR: preprocessing, Tesseract, handwriting, parsing
+│       └── privacy_tools/    # Presidio de-identification
+└── scratch_workspace/        # Git-ignored: everything dataset-specific; INDEX.md lists it
+    ├── inputs/<name>/        # Your datasets: catalogue/, data/, eda/, codes/, description.yaml
+    ├── schemas/              # The live schema registry + crosswalks/, built from your datasets
+    ├── warehouse/            # The output DuckDB files
+    └── ...                   # dummy data, per-dataset outputs, process log, past runs
 ```
 
-**All datasets go in `resources/datasets/`.** Nowhere else.
+Nothing under `resources/` is about a particular dataset: it is the skill's
+tools, instructions and generic settings. **Your datasets go in
+`scratch_workspace/inputs/<name>/`**, and the schemas built from them live in
+`scratch_workspace/schemas/`. None of it is ever committed. On a fresh clone the
+registry starts empty, so the first dataset is modelled as a new schema.
 
 ---
 
@@ -175,11 +194,11 @@ olap_swifter/
 
 ## TODO: OCR Pipeline Implementation & AI Misuse Risks
 
-### 1. Implementing the OCR Pipeline (`ocr/` & `privacy/`)
+### 1. Implementing the OCR Pipeline (`ocr_tools/` & `privacy_tools/`)
 The repository contains scaffolding for `TesseractRunner`, `preprocessor.py`, and `OfflinePresidioAnonymizer`. To bring physical paper form digitization into production:
-- **Image Preprocessing (`ocr/preprocessor.py`)**: Implement deskewing, contrast enhancement (CLAHE), adaptive binarization, and shadow removal to handle degraded paper records from clinic settings.
+- **Image Preprocessing (`ocr_tools/preprocessor.py`)**: Implement deskewing, contrast enhancement (CLAHE), adaptive binarization, and shadow removal to handle degraded paper records from clinic settings.
 - **Structured Form Layout Parsing**: Replace raw text dump with zone/table detection (bounding box segmentation for Patient Header, Diagnosis blocks, and AST Lab sensitivity grids).
-- **Automated Redaction & Privacy (`privacy/presidio_engine.py`)**: Gate raw OCR outputs through local Presidio de-identification to strip direct identifiers (patient names, phone numbers, village addresses) before staging.
+- **Automated Redaction & Privacy (`privacy_tools/presidio_engine.py`)**: Gate raw OCR outputs through local Presidio de-identification to strip direct identifiers (patient names, phone numbers, village addresses) before staging.
 - **Pipeline Integration**: Ingest sanitized OCR output directly into the DuckDB staging table (`raw_clinical_records`) to seamlessly trigger the dynamic constellation builder.
 
 ### 2. Risks of AI Misuse & Clinical Governance
@@ -199,7 +218,7 @@ Automating medical digitization and OLAP aggregation with AI introduces high-sta
 
 ### 3. Docker Compose Setup for the Skills (Next Iteration)
 Testing the skill today depends on a local `.venv`, a system DuckDB, and the machine-specific paths in `HOW_TO_RUN.md`. That makes results hard to reproduce across contributors and CI. For the next iterations:
-- **`docker-compose.yml` at the repo root**: One service that installs `resources/code_tools`, mounts `resources/datasets/` and `resources/clinical_warehouse.duckdb` as volumes, and exposes the `olap_swifter.cli` entry point (`build`, `profile`, `review`).
+- **`docker-compose.yml` at the repo root**: One service that installs `resources/code_tools`, mounts the repo (inputs and `scratch_workspace/` included), and exposes the `olap_swifter.cli` entry point (`build`, `profile`, `review`).
 - **One-command test run**: `docker compose run --rm olap pytest -v` should execute the full suite against a clean container, so sub-agents in `TEST.md` can be run without touching the host environment.
 - **Pin the toolchain**: Lock Python, DuckDB and (later) Tesseract/Presidio versions in the image so the OCR pipeline from item 1 can be tested in the same container.
 - **Update `HOW_TO_RUN.md`**: Replace the absolute `/Users/...` paths with container paths and add a "Run with Docker" section alongside the `.venv` instructions.

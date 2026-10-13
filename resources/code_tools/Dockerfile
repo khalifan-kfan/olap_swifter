@@ -28,6 +28,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 
 # Copy package source code
 COPY olap_swifter/ ./olap_swifter/
+COPY ocr_tools/ ./ocr_tools/
+COPY privacy_tools/ ./privacy_tools/
 
 # Install local package in editable mode
 RUN pip install --no-cache-dir -e .

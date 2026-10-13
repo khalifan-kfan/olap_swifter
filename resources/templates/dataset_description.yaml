@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------------------
 # Dataset Description — one per dataset, kept in its inputs folder:
 #
-#   resources/inputs/<dataset name>/
+#   scratch_workspace/inputs/<dataset name>/
 #       catalogue/             (required) one or more data dictionaries (.csv / .yaml / .yml)
 #       data/                  one or more raw CSV exports; only the code tools open them
 #       eda/                   one EDA per data file (eda/<file>.yaml); made from data/ if absent

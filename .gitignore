@@ -42,3 +42,9 @@ playwright-report/
 .DS_Store
 .idea/
 .vscode/
+
+# Workspace: every run's outputs (warehouses, dummy data, per-dataset work,
+# past runs). Never committed. See resources/ROUTES.yaml.
+scratch_workspace/
+resources/datasets/
+model_reviewer.html

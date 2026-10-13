@@ -1,7 +1,7 @@
 """
 Embedded DuckDB OLAP Store.
 Holds the warehouse connection and fills it with schema-driven dummy data.
-Table structure comes from the registered schema YAML (resources/schemas), not
+Table structure comes from the registered schema YAML (scratch_workspace/schemas), not
 from code, so the same store serves AMR, HIV or any other registered model.
 """
 

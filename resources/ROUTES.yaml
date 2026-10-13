@@ -1,0 +1,43 @@
+# File routing key: where every resource lives, by name.
+# Paths are relative to the repo root. The code tools resolve their paths from
+# this file (olap_swifter.paths.route), so a move is one edit here.
+# committed: false = git-ignored (data, or outputs of a run).
+
+routes:
+  # ---- The skill (repo root) ----
+  skill:            {path: SKILL.md, committed: true, what: "The rules and the workflow the agent follows"}
+  tests:            {path: TEST.md, committed: true, what: "Sub-agent test mandates and pass conditions"}
+  readme:           {path: README.md, committed: true, what: "What this repo is and how to start"}
+  model_reviewer:   {path: model_reviewer.html, committed: false, what: "Review page: schema art, process done so far, field mapping, checks. Rewritten by the tools after every step"}
+
+  # ---- Instructions ----
+  how_to_run:       {path: resources/instructions/HOW_TO_RUN.md, committed: true, what: "Every command, file path and file format"}
+  ocr_guide:        {path: resources/instructions/OCR.md, committed: true, what: "OCR pipeline (separate from the warehouse)"}
+  ocr_assets:       {path: resources/instructions/ocr_assets, committed: true, what: "OCR diagram and sample scanned forms"}
+  routes:           {path: resources/ROUTES.yaml, committed: true, what: "This file"}
+
+  # ---- Generic settings and templates (no dataset-specific content) ----
+  config:           {path: resources/config.yaml, committed: true, what: "Thresholds: match difference, EDA privacy, dummy row cap"}
+  description_template: {path: resources/templates/dataset_description.yaml, committed: true, what: "Questions to ask the user about a dataset"}
+  datasets:         {path: resources/datasets, committed: false, what: "Sample CSVs used by the code-tool tests"}
+  test_fixtures:    {path: resources/code_tools/olap_swifter/tests/fixtures, committed: true, what: "Seed schemas the tests copy; never the live registry"}
+
+  # ---- Code ----
+  code_tools:       {path: resources/code_tools, committed: true, what: "Python packages, Dockerfile, pyproject"}
+  olap_tools:       {path: resources/code_tools/olap_swifter, committed: true, what: "Warehouse: schema registry, ETL, checks, cube, reviewer, CLI"}
+  ocr_tools:        {path: resources/code_tools/ocr_tools, committed: true, what: "OCR: preprocessing, Tesseract, handwriting, field parsing, Docker runner"}
+  privacy_tools:    {path: resources/code_tools/privacy_tools, committed: true, what: "Presidio de-identification (used by OCR)"}
+
+  # ---- Workspace: everything a run writes (never committed) ----
+  workspace:        {path: scratch_workspace, committed: false, what: "Dumping folder for run outputs; INDEX.md lists what is in it"}
+  inputs:           {path: scratch_workspace/inputs, committed: false, what: "One folder per dataset: catalogue/, data/, eda/, codes/, description.yaml. Put a new dataset here"}
+  schemas:          {path: scratch_workspace/schemas, committed: false, what: "Live schema registry built from your datasets, one YAML per schema. Starts empty"}
+  crosswalks:       {path: scratch_workspace/schemas/crosswalks, committed: false, what: "Site label -> standard category maps for the live registry"}
+  workspace_index:  {path: scratch_workspace/INDEX.md, committed: false, what: "What each dumped file is and how to reuse it (rewritten by the tools)"}
+  warehouse:        {path: scratch_workspace/warehouse/warehouse.duckdb, committed: false, what: "Production warehouse (real data)"}
+  warehouse_dummy:  {path: scratch_workspace/warehouse/warehouse_dummy.duckdb, committed: false, what: "Dummy warehouse (proving a schema)"}
+  dummy_data:       {path: scratch_workspace/dummy, committed: false, what: "Dummy CSV, catalogue and EDA per schema: dummy/<schema>/"}
+  dataset_outputs:  {path: scratch_workspace/datasets, committed: false, what: "Per dataset: constellation.md, patches/, tests/, notes"}
+  process_log:      {path: scratch_workspace/process_log.jsonl, committed: false, what: "Every tool step (counts only); feeds the review page"}
+  review:           {path: scratch_workspace/review, committed: false, what: "Last build summary and UI screenshots behind the review page"}
+  experience:       {path: scratch_workspace/experience, committed: false, what: "Past runs and reports the skill has learned from"}

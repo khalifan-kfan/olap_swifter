@@ -6,7 +6,9 @@ Allows human-in-the-loop and Playwright automated agents to:
 3. Review semantic data validation status and join path depth.
 """
 
+from datetime import datetime
 from typing import Dict, List, Any, Optional
+import html
 import json
 
 
@@ -16,7 +18,10 @@ def generate_interactive_html(
     join_analysis: Dict[str, Any],
     deep_slices: List[Dict[str, Any]],
     output_path: str = "model_reviewer.html",
-    table_options: Optional[List[str]] = None
+    table_options: Optional[List[str]] = None,
+    schema_svg: str = "",
+    process: Optional[List[Dict[str, Any]]] = None,
+    context: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Generates a standalone, rich interactive HTML application for review and Playwright automation."""
 
@@ -49,11 +54,38 @@ def generate_interactive_html(
                 <ul style="padding-left: 20px; font-size: 13px; color: var(--text-muted); line-height: 1.6;">
                     {issue_items}
                 </ul>
-                <div style="margin-top: 8px; font-size: 12px; color: var(--text-muted);"><em>All issues match the raw staging oracle 1:1. The OLAP model and transformations are 100% intact.</em></div>
             </div>
         """
 
-    badge_text = f"Semantic Parity: 100% Intact • {len(failed_issues)} Data Issues Logged" if failed_issues else f"Semantic Parity: {validation_summary.get('passed', 0)}/{validation_summary.get('total_tests', 0)} Passed"
+    badge_text = (f"Checks: {validation_summary.get('passed', 0)}/{validation_summary.get('total_tests', 0)} passed"
+                  + (f" • {len(failed_issues)} data issues logged" if failed_issues else ""))
+    if not validation_summary:
+        badge_text = "No build yet"
+
+    ctx = context or {}
+    subtitle = " • ".join(x for x in (
+        f"Dataset: {html.escape(str(ctx['dataset']))}" if ctx.get("dataset") else "",
+        f"Schema: {html.escape(str(ctx['schema']))}" if ctx.get("schema") else "",
+        f"Last build source: {html.escape(str(ctx['source']))}" if ctx.get("source") else "",
+        f"Generated {datetime.now():%Y-%m-%d %H:%M}") if x)
+    marks = {"done": "✓", "failed": "✗", "todo": "○"}
+    steps_html = "".join(
+        f'<li class="step {p["status"]}"><span class="mark">{marks[p["status"]]}</span>'
+        f'<div><div>{html.escape(p["label"])}</div>'
+        + (f'<div class="step-meta">{p["time"].replace("T", " ")}'
+           + (f' • {p["runs"]} runs' if p["runs"] > 1 else "")
+           + "".join(f" • {html.escape(str(k))}: {html.escape(str(v))}" for k, v in list(p["counts"].items())[:4])
+           + (f' • {html.escape(p["note"])}' if p["note"] else "") + "</div>" if p["status"] != "todo" else "")
+        + "</div></li>"
+        for p in (process or []))
+    done = sum(1 for p in (process or []) if p["status"] == "done")
+    process_html = (f'<div class="card" style="margin-bottom: 24px;"><div class="card-title">Process '
+                    f'<span class="badge badge-success">{done}/{len(process)} done</span></div>'
+                    f'<ul class="steps">{steps_html}</ul></div>') if process else ""
+    art_html = (f'<div class="card" style="margin-bottom: 24px;"><div class="card-title">Schema '
+                f'<span style="font-size: 13px; color: var(--text-muted);">'
+                f'{ctx.get("highlighted_tables", 0)} tables / {ctx.get("highlighted_columns", 0)} columns from this dataset (filled)'
+                f'</span></div>{schema_svg}</div>') if schema_svg else ""
 
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -93,6 +125,18 @@ def generate_interactive_html(
         .metric-val {{ font-size: 20px; font-weight: 600; margin-top: 4px; }}
         .btn {{ background: var(--accent); color: #000; font-weight: 600; padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; }}
         .btn:hover {{ opacity: 0.9; }}
+        .schema-art {{ width: 100%; height: auto; }}
+        .schema-art .edge {{ stroke: var(--border); stroke-width: 1.5; }}
+        .schema-art rect {{ fill: var(--surface-hover); stroke: var(--text-muted); }}
+        .schema-art .hl rect {{ fill: rgba(210, 153, 34, 0.25); stroke: var(--warning); stroke-width: 2; }}
+        .schema-art text {{ fill: var(--text); font-size: 12px; text-anchor: middle; }}
+        .steps {{ list-style: none; }}
+        .step {{ display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 14px; }}
+        .step .mark {{ width: 18px; font-weight: 700; }}
+        .step.done .mark {{ color: var(--success); }}
+        .step.failed .mark {{ color: var(--danger); }}
+        .step.todo {{ color: var(--text-muted); }}
+        .step-meta {{ font-size: 12px; color: var(--text-muted); margin-top: 2px; }}
         #save-status {{ margin-left: 12px; font-size: 13px; color: var(--success); display: none; }}
     </style>
 </head>
@@ -100,15 +144,17 @@ def generate_interactive_html(
     <div class="header">
         <div>
             <h1 class="title">Medical OLAP Model Reviewer & Field Switcher</h1>
-            <p style="color: var(--text-muted); font-size: 14px; margin-top: 4px;">Verified: No variable left out • Semantic Invariance Active</p>
+            <p style="color: var(--text-muted); font-size: 14px; margin-top: 4px;">{subtitle}</p>
         </div>
         <div>
-            <span class="badge badge-success" id="overall-status">{badge_text}</span>
+            <span class="badge {'badge-warning' if failed_issues or not validation_summary else 'badge-success'}" id="overall-status">{badge_text}</span>
         </div>
     </div>
 
     <div class="grid">
-        <!-- Main Column: Field Inventory & Switcher -->
+        <!-- Main Column: Schema art, Field Inventory & Switcher -->
+        <div>
+        {art_html}
         <div class="card">
             <div class="card-title">
                 <span>Field Mapping Inventory (<span id="field-count">{len(active_fields)}</span> Variables)</span>
@@ -133,9 +179,11 @@ def generate_interactive_html(
             {excluded_html}
             {issues_html}
         </div>
+        </div>
 
-        <!-- Sidebar: Join Graph, Latency & Deep Slices -->
+        <!-- Sidebar: Process, Join Graph, Latency & Deep Slices -->
         <div>
+            {process_html}
             <div class="card" style="margin-bottom: 24px;">
                 <div class="card-title">Join Path & Latency Profile</div>
                 <div class="metric-card">
@@ -163,7 +211,7 @@ def generate_interactive_html(
         const joinAnalysis = {json.dumps(join_analysis)};
         const deepSlices = {json.dumps(deep_slices)};
 
-        const tableOptions = {json.dumps(table_options or sorted({f["target_table"] for f in fields}))};
+        const tableOptions = {json.dumps(table_options or sorted({f["target_table"] for f in active_fields}))};
 
         const roleOptions = ["dimension_attribute", "metric", "primary_key", "foreign_key"];
 

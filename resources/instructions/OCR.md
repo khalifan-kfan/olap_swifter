@@ -4,18 +4,18 @@ This document visualizes and defines the **OCR and De-Identification Pipeline** 
 
 > [!IMPORTANT]
 > **No Agent Skill is involved at this stage.**
-> The OCR pipeline is a strictly isolated, deterministic data-engineering toolchain executed in a containerized environment. The Agent Skill ([`SKILL.md`](SKILL.md)) operates **only** on sanitized tabular catalogues, EDA profiles, and dimensional schemas. Raw patient images and OCR text recognition are segregated to guarantee patient privacy and eliminate LLM dosage hallucination risks.
+> The OCR pipeline is a strictly isolated, deterministic data-engineering toolchain executed in a containerized environment. The Agent Skill ([`SKILL.md`](../../SKILL.md)) operates **only** on sanitized tabular catalogues, EDA profiles, and dimensional schemas. Raw patient images and OCR text recognition are segregated to guarantee patient privacy and eliminate LLM dosage hallucination risks.
 
 ---
 
 ## 1. Pipeline Architecture Diagram
 
 <p align="center">
-  <img src="resources/images/ocr_pipeline.png" alt="OCR pipeline: scanned document, preprocessing, printed OCR and cursive HTR, Presidio redaction, entity parser, DuckDB staging, then handoff of sanitized data to the Agent Skill" width="560">
+  <img src="ocr_assets/ocr_pipeline.png" alt="OCR pipeline: scanned document, preprocessing, printed OCR and cursive HTR, Presidio redaction, entity parser, DuckDB staging, then handoff of sanitized data to the Agent Skill" width="560">
 </p>
 
 <details>
-<summary><b>Mermaid source</b> (renders on GitHub; edit <code>resources/images/ocr_pipeline.mmd</code> and re-render the PNG)</summary>
+<summary><b>Mermaid source</b> (renders on GitHub; edit <code>ocr_assets/ocr_pipeline.mmd</code> and re-render the PNG)</summary>
 
 ```mermaid
 flowchart TD
@@ -68,8 +68,8 @@ flowchart TD
 Re-render after editing:
 
 ```bash
-npx -y @mermaid-js/mermaid-cli -i resources/images/ocr_pipeline.mmd \
-    -o resources/images/ocr_pipeline.png -b white -s 2 -w 900
+npx -y @mermaid-js/mermaid-cli -i resources/instructions/ocr_assets/ocr_pipeline.mmd \
+    -o resources/instructions/ocr_assets/ocr_pipeline.png -b white -s 2 -w 900
 ```
 
 </details>
@@ -117,10 +117,10 @@ npx -y @mermaid-js/mermaid-cli -i resources/images/ocr_pipeline.mmd \
 
 | # | Stage | Module | In → Out |
 | :-: | :--- | :--- | :--- |
-| 1 | Preprocessing | [`ocr/preprocessor.py`](resources/code_tools/olap_swifter/ocr/preprocessor.py) | scanned image → clean 1-bit image in 4 regions |
-| 2 | Dual recognition | [`ocr/tesseract_runner.py`](resources/code_tools/olap_swifter/ocr/tesseract_runner.py), [`ocr/cursive_recognizer.py`](resources/code_tools/olap_swifter/ocr/cursive_recognizer.py) | image → raw text |
-| 3 | Privacy & redaction | [`privacy/presidio_engine.py`](resources/code_tools/olap_swifter/privacy/presidio_engine.py) | raw text → sanitized text |
-| 4 | Field extraction | [`ocr/entity_parser.py`](resources/code_tools/olap_swifter/ocr/entity_parser.py) | sanitized text → 72-variable wide record |
+| 1 | Preprocessing | [`ocr_tools/preprocessor.py`](../code_tools/ocr_tools/preprocessor.py) | scanned image → clean 1-bit image in 4 regions |
+| 2 | Dual recognition | [`ocr_tools/tesseract_runner.py`](../code_tools/ocr_tools/tesseract_runner.py), [`ocr_tools/cursive_recognizer.py`](../code_tools/ocr_tools/cursive_recognizer.py) | image → raw text |
+| 3 | Privacy & redaction | [`privacy_tools/presidio_engine.py`](../code_tools/privacy_tools/presidio_engine.py) | raw text → sanitized text |
+| 4 | Field extraction | [`ocr_tools/entity_parser.py`](../code_tools/ocr_tools/entity_parser.py) | sanitized text → 72-variable wide record |
 | — | Handoff | DuckDB `raw_clinical_records` | wide records → Agent Skill |
 
 ---
@@ -131,13 +131,13 @@ The boundary between the **OCR toolchain** and the **OLAP Agent Skill** is stric
 
 1. **Zero Data Leakage (Patient Privacy)**: Raw paper documents contain direct patient identifiers (full names, mobile numbers, Ugandan National Identification Numbers). Feeding unredacted scanned text into an LLM context window violates privacy boundaries. Microsoft Presidio must sanitize the payload *offline* before anything touches an agent.
 2. **Deterministic Dosage & AST Extraction**: Large language models can hallucinate or round critical numeric clinical values (e.g., misinterpreting `0.5g` as `5g`, or flipping an antimicrobial susceptibility test from `Susceptible (S)` to `Resistant (R)`). The OCR engine operates as a deterministic parser with explicit regex lexicons.
-3. **Skill Domain Separation**: The `olap_swifter` Agent Skill ([`SKILL.md`](SKILL.md)) is specialized in **multidimensional schema architecture** (star/constellation schemas, join graphs, DuckDB SQL, and latency-budgeted slicing). It begins its work once a tabular data structure or staging table is available.
+3. **Skill Domain Separation**: The `olap_swifter` Agent Skill ([`SKILL.md`](../../SKILL.md)) is specialized in **multidimensional schema architecture** (star/constellation schemas, join graphs, DuckDB SQL, and latency-budgeted slicing). It begins its work once a tabular data structure or staging table is available.
 
 ---
 
 ## 3. Pipeline Stages Breakdown
 
-### Stage 1: Preprocessing ([`ocr/preprocessor.py`](resources/code_tools/olap_swifter/ocr/preprocessor.py))
+### Stage 1: Preprocessing ([`ocr_tools/preprocessor.py`](../code_tools/ocr_tools/preprocessor.py))
 - **Grayscale Conversion**: Eliminates color noise from paper background and stamps.
 - **Contrast Enhancement (2.0x)**: Accentuates faded ink and carbon copy text.
 - **Adaptive Thresholding / Binarization**: Converts to clean 1-bit black/white pixels.
@@ -147,12 +147,12 @@ The boundary between the **OCR toolchain** and the **OLAP Agent Skill** is stric
   - `clinical_findings`: Triage symptoms, vital signs, diagnostic checkboxes
   - `rx_and_labs`: Laboratory requests, prescribed antibiotics, referrals
 
-### Stage 2: Dual Recognition ([`ocr/tesseract_runner.py`](resources/code_tools/olap_swifter/ocr/tesseract_runner.py) & [`ocr/cursive_recognizer.py`](resources/code_tools/olap_swifter/ocr/cursive_recognizer.py))
+### Stage 2: Dual Recognition ([`ocr_tools/tesseract_runner.py`](../code_tools/ocr_tools/tesseract_runner.py) & [`ocr_tools/cursive_recognizer.py`](../code_tools/ocr_tools/cursive_recognizer.py))
 - **Primary Printed OCR**: Runs Tesseract 5 with LSTM neural network line finding.
 - **Tail-End Cursive / HTR**: Specialized pass (`--psm 6 --oem 1`) with morphological loop-closing filter to extract handwritten doctor impressions, notes, and signatures.
 - **Lexicon Normalization**: Expands Latin clinical abbreviations (`tds` -> Three Times Daily, `PO` -> Oral, `Inj` -> Injection) and matches against canonical antimicrobials (`Ceftriaxone`, `Amoxicillin`, `Ciprofloxacin`).
 
-### Stage 3: Privacy & Redaction ([`privacy/presidio_engine.py`](resources/code_tools/olap_swifter/privacy/presidio_engine.py))
+### Stage 3: Privacy & Redaction ([`privacy_tools/presidio_engine.py`](../code_tools/privacy_tools/presidio_engine.py))
 - **Presidio Analyzer**: Detects sensitive entities using spaCy and custom clinical pattern recognizers:
   - `Patient's Last Name: ...`, `First Name: ...` -> `<REDACTED_PATIENT_NAME>`
   - `Phone: +256 701...`, `0772...` -> `<REDACTED_PHONE>`
@@ -160,7 +160,7 @@ The boundary between the **OCR toolchain** and the **OLAP Agent Skill** is stric
   - `CLINICIAN: Dr. ...`, `Signed: KM` -> `<REDACTED_PATIENT_NAME>` / `<REDACTED_CLINICIAN>`
 - **Facility Protection**: Keywords matching `KCCA`, `Kampala Capital City Authority`, `Ministry of Health`, and `Health Centre` are protected from masking to ensure the dimensional model can populate `dim_facility`.
 
-### Stage 4: Structural Field Extraction ([`ocr/entity_parser.py`](resources/code_tools/olap_swifter/ocr/entity_parser.py))
+### Stage 4: Structural Field Extraction ([`ocr_tools/entity_parser.py`](../code_tools/ocr_tools/entity_parser.py))
 - Extracts **72 wide variables** mapped into clinical categories (Facility, Demographics, Symptoms, Labs, Diagnoses, Medications, Disposition).
 - Direct identifiers (`patient_name`, `phone`, `nin`) are excluded or replaced with `"Anonymous Patient"`, producing clean, analytics-ready wide records.
 
@@ -178,8 +178,8 @@ docker run --rm \
   -e PYTHONPATH=/workspace/resources/code_tools \
   olap-swifter:latest \
   python3 -c "
-from olap_swifter.ocr.tesseract_runner import TesseractRunner
-res = TesseractRunner().extract_text('resources/images/kcca_medical.webp', preprocess=True)
+from ocr_tools.tesseract_runner import TesseractRunner
+res = TesseractRunner().extract_text('resources/instructions/ocr_assets/kcca_medical.webp', preprocess=True)
 print(f'Engine: {res[\"engine\"]}')
 print(f'Characters: {len(res[\"text\"])}')
 print(res['text'][:500])
@@ -193,5 +193,5 @@ docker run --rm \
   -w /workspace \
   -e PYTHONPATH=/workspace/resources/code_tools \
   olap-swifter:latest \
-  olap-swifter ocr resources/images/kcca_medical.webp
+  olap-swifter ocr resources/instructions/ocr_assets/kcca_medical.webp
 ```

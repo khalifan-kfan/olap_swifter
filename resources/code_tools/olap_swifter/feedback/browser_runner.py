@@ -12,9 +12,10 @@ from typing import Dict, Any, Optional
 class PlaywrightFeedbackRunner:
     """Automates headless browser testing of the OLAP model reviewer UI."""
 
-    def __init__(self, html_path: str = "model_reviewer.html", screenshot_path: str = "model_verification_screenshot.png"):
-        self.html_path = Path(html_path).resolve()
-        self.screenshot_path = Path(screenshot_path).resolve()
+    def __init__(self, html_path: Optional[str] = None, screenshot_path: Optional[str] = None):
+        from olap_swifter.paths import route, workspace_path
+        self.html_path = Path(html_path or route("model_reviewer")).resolve()
+        self.screenshot_path = Path(screenshot_path or workspace_path("review") / "model_verification_screenshot.png").resolve()
 
     async def run_verification(self, field_to_switch: Optional[str] = None, new_target_table: Optional[str] = None) -> Dict[str, Any]:
         """

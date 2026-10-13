@@ -1,0 +1,44 @@
+# Crosswalk ward_type: raw ward labels -> one standard value each (the allowed values of
+# clinical_visit dim_visit.ward_type). Matching ignores case and extra spaces. A label that
+# means something different at one site gets its own entry with `scope: <facility code>`.
+# Add entries freely; change an existing maps_to only with the user's agreement, since
+# loaded data already carries it. `source values ... --crosswalk ward_type` adds new labels.
+name: ward_type
+from_variable: admission_ward
+entries:
+- value: Medical
+  maps_to: Medical
+- value: Medical Ward
+  maps_to: Medical
+- value: Surgical
+  maps_to: Surgical
+- value: Surgical Ward
+  maps_to: Surgical
+- value: Paediatric
+  maps_to: Paediatric
+- value: Pediatric
+  maps_to: Paediatric
+- value: Paediatric Ward
+  maps_to: Paediatric
+- value: Pediatric Ward
+  maps_to: Paediatric
+- value: Children's Ward
+  maps_to: Paediatric
+- value: Maternity
+  maps_to: Maternity
+- value: Maternity Ward
+  maps_to: Maternity
+- value: Labour Ward
+  maps_to: Maternity
+- value: ICU
+  maps_to: ICU
+- value: Intensive Care Unit
+  maps_to: ICU
+- value: Emergency
+  maps_to: Emergency
+- value: Casualty
+  maps_to: Emergency
+- value: OPD
+  maps_to: Outpatient
+- value: OPD Clinic
+  maps_to: Outpatient

@@ -227,9 +227,13 @@ class SchemaSpec:
         dataset, or `<dataset>_<data file>` when a dataset has several files
         (the longest matching dataset name wins).
         """
+        name = self.dataset_name_for_source(source_id)
+        return (self.datasets[name] or {}) if name else {}
+
+    def dataset_name_for_source(self, source_id: str) -> Optional[str]:
         sid = normalize_name(source_id)
         hits = [n for n in self.datasets if sid == normalize_name(n) or sid.startswith(normalize_name(n) + "_")]
-        return (self.datasets[max(hits, key=len)] or {}) if hits else {}
+        return max(hits, key=len) if hits else None
 
     def dataset_columns(self, dataset: str) -> List[str]:
         """`table.column` for every column fed by `dataset`."""

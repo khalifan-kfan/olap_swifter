@@ -14,11 +14,11 @@ try:
 except ImportError:
     pytesseract = None
 
-from olap_swifter.ocr.preprocessor import ImagePreprocessor
-from olap_swifter.ocr.cursive_recognizer import CursiveTextRecognizer
-from olap_swifter.ocr.entity_parser import ClinicalEntityParser
-from olap_swifter.privacy.presidio_engine import OfflinePresidioAnonymizer
-from olap_swifter.docker_runner import DockerRunner
+from ocr_tools.preprocessor import ImagePreprocessor
+from ocr_tools.cursive_recognizer import CursiveTextRecognizer
+from ocr_tools.entity_parser import ClinicalEntityParser
+from privacy_tools.presidio_engine import OfflinePresidioAnonymizer
+from ocr_tools.docker_runner import DockerRunner
 
 
 class TesseractRunner:
