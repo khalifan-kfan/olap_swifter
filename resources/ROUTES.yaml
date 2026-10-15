@@ -23,6 +23,7 @@ routes:
 
   # ---- Code ----
   code_tools:       {path: resources/code_tools, committed: true, what: "Python packages, Dockerfile, pyproject"}
+  packages:         {path: resources/code_tools/PACKAGES.md, committed: true, what: "Every third-party package, where it is used, and its last security audit"}
   olap_tools:       {path: resources/code_tools/olap_swifter, committed: true, what: "Warehouse: schema registry, ETL, checks, cube, reviewer, CLI"}
   ocr_tools:        {path: resources/code_tools/ocr_tools, committed: true, what: "OCR: preprocessing, Tesseract, handwriting, field parsing, Docker runner"}
   privacy_tools:    {path: resources/code_tools/privacy_tools, committed: true, what: "Presidio de-identification (used by OCR)"}

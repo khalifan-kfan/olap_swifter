@@ -49,7 +49,7 @@ the description, and switches it on when your request matches.
 **For this project only** (recommended — it travels with the repo):
 
 ```bash
-cd /Users/muwongekhalifan/Desktop/dexta_s_lab/olap_swifter
+cd /usr/olap_swifter
 mkdir -p .agents/skills/medical-olap-orchestrator
 cp SKILL.md TEST.md resources/instructions/HOW_TO_RUN.md .agents/skills/medical-olap-orchestrator/
 ```
