@@ -133,6 +133,9 @@ You do not need Gemini at all. The same warehouse can be built by hand:
 Full details, including the raw DuckDB SQL, are in
 [**HOW_TO_RUN.md**](resources/instructions/HOW_TO_RUN.md).
 
+**Browse a warehouse (people only, shows real rows):** `.venv/bin/python -m olap_swifter.cli view`
+opens http://127.0.0.1:8765, read-only, listing every workspace `.duckdb`, its tables and the first 200 rows (`--db`, `--limit`, `--port`).
+
 ---
 
 ## Setup

@@ -10,7 +10,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
-from typing import Optional
+from typing import List, Optional
 
 from olap_swifter import schema_cli
 
@@ -139,6 +139,18 @@ def review(dataset: Optional[str] = typer.Option(None, help="Dataset to review (
     """Re-renders model_reviewer.html: schema art, process done so far, last build's fields and checks."""
     from olap_swifter.feedback.worklog import render_review
     console.print(f"[bold green]Reviewer:[/bold green] file://{render_review(dataset=dataset)}")
+
+
+@app.command()
+def view(
+    db: Optional[List[str]] = typer.Option(None, "--db", help="Extra .duckdb file(s) to list (workspace ones are found automatically)"),
+    port: int = typer.Option(8765, help="Local port"),
+    limit: int = typer.Option(200, help="Rows shown per table"),
+):
+    """Opens a read-only DuckDB viewer on localhost: databases, tables, first rows. For people, not the agent."""
+    from pathlib import Path
+    from olap_swifter.feedback.db_viewer import serve
+    serve([Path(p) for p in db or []], port=port, limit=limit)
 
 
 @app.command()
