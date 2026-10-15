@@ -47,4 +47,3 @@ playwright-report/
 # past runs). Never committed. See resources/ROUTES.yaml.
 scratch_workspace/
 resources/datasets/
-model_reviewer.html

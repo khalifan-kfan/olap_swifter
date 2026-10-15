@@ -8,7 +8,6 @@ routes:
   skill:            {path: SKILL.md, committed: true, what: "The rules and the workflow the agent follows"}
   tests:            {path: TEST.md, committed: true, what: "Sub-agent test mandates and pass conditions"}
   readme:           {path: README.md, committed: true, what: "What this repo is and how to start"}
-  model_reviewer:   {path: model_reviewer.html, committed: false, what: "Review page: schema art, process done so far, field mapping, checks. Rewritten by the tools after every step"}
 
   # ---- Instructions ----
   how_to_run:       {path: resources/instructions/HOW_TO_RUN.md, committed: true, what: "Every command, file path and file format"}
@@ -30,7 +29,7 @@ routes:
 
   # ---- Workspace: everything a run writes (never committed) ----
   workspace:        {path: scratch_workspace, committed: false, what: "Dumping folder for run outputs; INDEX.md lists what is in it"}
-  inputs:           {path: scratch_workspace/inputs, committed: false, what: "One folder per dataset: catalogue/, data/, eda/, codes/, description.yaml. Put a new dataset here"}
+  inputs:           {path: scratch_workspace/inputs, committed: false, what: "One folder per dataset: catalogue/, data/, eda/, codes/, description/ (source docs such as a protocol or SOP), description.yaml. Put a new dataset here"}
   schemas:          {path: scratch_workspace/schemas, committed: false, what: "Live schema registry built from your datasets, one YAML per schema. Starts empty"}
   crosswalks:       {path: scratch_workspace/schemas/crosswalks, committed: false, what: "Site label -> standard category maps for the live registry"}
   workspace_index:  {path: scratch_workspace/INDEX.md, committed: false, what: "What each dumped file is and how to reuse it (rewritten by the tools)"}
@@ -39,5 +38,6 @@ routes:
   dummy_data:       {path: scratch_workspace/dummy, committed: false, what: "Dummy CSV, catalogue and EDA per schema: dummy/<schema>/"}
   dataset_outputs:  {path: scratch_workspace/datasets, committed: false, what: "Per dataset: constellation.md, patches/, scripts/ (ETL and processing scripts), tests/, notes"}
   process_log:      {path: scratch_workspace/process_log.jsonl, committed: false, what: "Every tool step (counts only); feeds the review page"}
+  model_reviewer:   {path: scratch_workspace/review/model_reviewer.html, committed: false, what: "Review page: schema art, process done so far, field mapping, checks. Rewritten by the tools after every step"}
   review:           {path: scratch_workspace/review, committed: false, what: "Last build summary and UI screenshots behind the review page"}
   experience:       {path: scratch_workspace/experience, committed: false, what: "Past runs and reports the skill has learned from"}

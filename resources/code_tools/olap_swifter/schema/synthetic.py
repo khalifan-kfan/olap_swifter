@@ -126,7 +126,16 @@ class SyntheticGenerator:
             for i in range(1, size + 1):
                 row = {dim.key: self._key(key_col, i)}
                 for link in dim.links:
-                    row.update(self.rng.choice(self.pools[link]))
+                    if len(self.pools[link]) >= size:
+                        row.update(self.pools[link][i - 1])
+                    else:
+                        row.update(self.rng.choice(self.pools[link]))
+                if key_col.expr:
+                    for name in key_col.inputs:
+                        if name not in row:
+                            row[name] = self.rng.choice(key_col.input_examples) if key_col.input_examples else (
+                                self._key(key_col, i) if name == key_col.inputs[0] else f"{name}_{self.rng.randint(1, 6)}"
+                            )
                 own = [c for c in dim.columns.values() if c.name != dim.key]
                 row.update(self._row_values(own))
                 pool.append(row)

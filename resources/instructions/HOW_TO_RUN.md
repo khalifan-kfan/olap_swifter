@@ -56,13 +56,13 @@ name; the code tools resolve their paths from it, so a move is one edit there.
 | `scratch_workspace/schemas/` | **The schema registry**, built from your datasets. One YAML file per schema (`<schema_id>.yaml`), edited in place, never versioned; `crosswalks/` beside them. Starts empty on a fresh clone. Git-ignored. |
 | `resources/config.yaml` | Match threshold (`new_schema_min_difference`, default 0.8) and EDA small-cell settings. |
 | `resources/templates/dataset_description.yaml` | The dataset description template: user sections, then the sections the skill fills. |
-| `scratch_workspace/inputs/<dataset>/` | **One folder per dataset:** `catalogue/`, `data/`, `eda/`, `codes/` (each may hold several files) and `description.yaml`. Git-ignored. |
+| `scratch_workspace/inputs/<dataset>/` | **One folder per dataset:** `catalogue/`, `data/`, `eda/`, `codes/` (each may hold several files), `description/` (source documents such as a protocol or SOP; the skill reads them only for the template's answers) and `description.yaml`. Git-ignored. |
 | `resources/datasets/` | Sample CSVs used by the tests (opened only by the code tools). Git-ignored. |
 | `resources/code_tools/olap_swifter/schema/` | Registry, matcher, extender, loader (ETL), dummy data, checks, constellation view. |
 | `resources/code_tools/olap_swifter/` | The rest of the warehouse package (cube, profiler, reviewer, process log, CLI) and `tests/`. |
 | `resources/code_tools/ocr_tools/` | OCR, kept separate from the warehouse (see [OCR.md](OCR.md)). |
 | `resources/code_tools/privacy_tools/` | Presidio de-identification, used by OCR. |
-| `model_reviewer.html` | The review page. Rewritten after every tool step. Git-ignored. |
+| `scratch_workspace/review/model_reviewer.html` | The review page. Rewritten after every tool step. Git-ignored. |
 | `scratch_workspace/` | **Everything a run writes.** Git-ignored. `INDEX.md` lists what is there. |
 | `scratch_workspace/warehouse/` | `warehouse.duckdb` (production) and `warehouse_dummy.duckdb` (dummy): the defaults for `etl`/`check`. |
 | `scratch_workspace/dummy/<schema>/` | Dummy CSV, catalogue and EDA from `synth`. |
@@ -252,9 +252,11 @@ $O constellation --highlight hiv_site_b     # -> scratch_workspace/datasets/hiv_
 $O review --dataset hiv_site_b              # re-render model_reviewer.html for this dataset
 ```
 
-The review page (`model_reviewer.html`) shows the schema art with the
+The review page (`scratch_workspace/review/model_reviewer.html`) shows the schema art with the
 dataset's tables filled, every workflow step done so far (✓ done, ✗ failed,
 ○ not yet) with its counts, and the last build's field mapping and checks.
+The table picker above the field mapping switches between all tables and a
+single table (its fields and join path only).
 
 The Markdown has a Mermaid diagram with the dataset's tables marked ★ and a
 table per warehouse table showing which datasets feed each column.

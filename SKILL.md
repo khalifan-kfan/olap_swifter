@@ -29,6 +29,13 @@ in the dataset's own folder there. Never write outputs to the repo root or into
 `resources/`. The workspace's index says what each file is. Its **experience** folder holds
 past runs: read their reports when a similar dataset arrives.
 
+**Never edit the skill while running it.** During a run, do not change
+`SKILL.md`, `TEST.md`, `resources/` or the code tools. When a tool fails,
+first retry the failing part in the dataset's workspace folder (a script or
+a smaller step there). If that does not get around it, carry on where
+possible and raise the problem once, in the final report, with the tool,
+the step and the error.
+
 Nothing here is specific to one disease or one dataset. AMR and HIV appear only
 as examples.
 
@@ -95,7 +102,15 @@ Every dataset arrives with:
 | **Description** (the template) | strongly expected | The study, the main question, what one row is, the main event, code lists, privacy constraints, instructions. |
 
 All three live in one inputs folder per dataset, with the data and the code
-lists (vocabularies). A dataset often arrives as several exports with several
+lists (vocabularies). They usually arrive in the workspace's **inputs** route
+(`scratch_workspace/inputs`) as `catalogues/`, `data/`, `eda/` and
+`description/` folders.
+
+**The description is often a large document** (a protocol, an SOP, a report),
+not the template. Read it only for the template's answers: study, main
+question, what one row is, main event, code lists, privacy. Stop reading once
+those are found. Never summarise the whole document; ignore the rest
+(budgets, consent forms, staffing). A dataset often arrives as several exports with several
 dictionaries, so catalogues, data, EDAs and code lists are each a folder of
 files. Catalogues and EDAs are merged by variable name, and every variable
 records which data files carry it. Each data file loads as its own source of
@@ -142,6 +157,19 @@ If a dataset has no visit identifier, derive one (for example patient plus date)
 as an expression and record how in the schema. If a fact row has no visit, the
 model is wrong. Fix the model, not the data.
 
+The spine is the default, not a cage:
+
+- **Dataset-specific visit or patient tables.** When a dataset's visit (for
+  example, a community outreach contact rather than a clinic visit) or its
+  patient (for example, a household or a sample donor) means something too
+  different to share the common table, create its own table (for example,
+  `dim_visit_<dataset>`). Write down why.
+- **Source of data.** Every row records which source (dataset and file) it came
+  from, through a source table that facts and visits link to.
+- **Independent data mart.** A dataset that shares little with the
+  constellation can be its own data mart with its own spine. Choose this over
+  forcing a poor fit, and record the decision in `relationship_to_existing`.
+
 ### Rule 6 — Reuse, never rename
 Schemas are stored once and reused. A table name means the same table across
 the whole warehouse: if `dim_patient` exists, a new dataset uses it. Changes are
@@ -177,7 +205,8 @@ the staged source. If they don't, the split was wrong.
 There is one warehouse, and it is a **fact constellation**: many fact tables
 sharing the same dimensions, all anchored on the visit spine. Each schema is a
 view onto part of it — the tables one kind of study needs — and schemas overlap
-wherever they share tables.
+wherever they share tables. An independent data mart (Rule 5) stands beside
+the constellation with its own tables and is not forced into it.
 
 Each schema lives in one file. The file records which datasets are attached to
 it, the main fact each dataset answers to, and, on every column, which datasets
@@ -343,10 +372,16 @@ Debug from the results:
 Repeat until the ETL loads, the build completes and every TEST.md mandate
 passes, or until only data issues the user has to decide on remain.
 
+**Stop when done.** Once every mandate passes, or only the user's decisions
+remain, go to Step 8. Do not keep refining, re-reading inputs or adding
+tables nobody asked for.
+
 ### Step 8 — Report back when it is done
 The tools keep a process log and a review page as they run: schema art with
 this dataset's tables filled, every step done so far, the field mapping and
-the checks. Record the TEST.md results there too (the tools cannot see them).
+the checks. Its table picker shows one table at a time; use it to review a
+table on its own rather than the whole model. Record the TEST.md results
+there too (the tools cannot see them).
 Point the user to the review page, and report once, at the end, with:
 
 - the constellation view with this dataset's tables and variables highlighted,

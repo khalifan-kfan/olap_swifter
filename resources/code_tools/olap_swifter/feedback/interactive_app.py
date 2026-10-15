@@ -17,7 +17,7 @@ def generate_interactive_html(
     validation_summary: Dict[str, Any],
     join_analysis: Dict[str, Any],
     deep_slices: List[Dict[str, Any]],
-    output_path: str = "model_reviewer.html",
+    output_path: str = "scratch_workspace/review/model_reviewer.html",
     table_options: Optional[List[str]] = None,
     schema_svg: str = "",
     process: Optional[List[Dict[str, Any]]] = None,
@@ -159,6 +159,9 @@ def generate_interactive_html(
             <div class="card-title">
                 <span>Field Mapping Inventory (<span id="field-count">{len(active_fields)}</span> Variables)</span>
                 <div>
+                    <select id="table-view" onchange="renderFields(); renderJoinDetails();" title="Show one table or all">
+                        <option value="">All tables</option>
+                    </select>
                     <button class="btn" id="btn-save-model" onclick="saveModelChanges()">Apply Model Changes</button>
                     <span id="save-status">Saved!</span>
                 </div>
@@ -215,10 +218,16 @@ def generate_interactive_html(
 
         const roleOptions = ["dimension_attribute", "metric", "primary_key", "foreign_key"];
 
+        // Single-table view: "" shows every table, otherwise only the chosen one.
+        const tableView = document.getElementById("table-view");
+        tableOptions.forEach(opt => tableView.add(new Option(opt, opt)));
+
         function renderFields() {{
             const tbody = document.getElementById("fields-body");
             tbody.innerHTML = "";
-            initialFields.forEach((f, idx) => {{
+            const shown = initialFields.filter(f => !tableView.value || f.target_table === tableView.value);
+            document.getElementById("field-count").innerText = shown.length;
+            shown.forEach((f, idx) => {{
                 const tr = document.createElement("tr");
                 tr.id = `row-${{f.name}}`;
 
@@ -264,6 +273,7 @@ def generate_interactive_html(
             let html = "<ul style='padding-left: 16px; line-height: 1.6;'>";
             let maxJ = 0;
             for (const [tbl, data] of Object.entries(joinAnalysis)) {{
+                if (tableView.value && tbl !== tableView.value) continue;
                 const joins = data.number_of_joins;
                 if (joins > maxJ) maxJ = joins;
                 html += `<li><strong>${{tbl}}</strong>: ${{joins}} join(s) via <code>${{data.path.join(" ➔ ")}}</code></li>`;

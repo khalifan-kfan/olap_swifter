@@ -153,7 +153,6 @@ olap_swifter/
 ├── TEST.md                   # Sub-agent test definitions
 ├── README.md                 # This file
 ├── docker-compose.yml        # Run the code tools in a container
-├── model_reviewer.html       # Review page, rewritten by the tools (git-ignored)
 ├── resources/
 │   ├── ROUTES.yaml           # Routing key: where every resource lives, by name
 │   ├── instructions/         # HOW_TO_RUN.md, OCR.md, ocr_assets/ (diagrams, sample forms)
