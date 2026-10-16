@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import duckdb
 
-from olap_swifter.paths import repo_root, route
+from olap_swifter.paths import route
 
 STYLE = """
 :root { --bg:#ffffff; --surface:#f6f8fa; --border:#d0d7de; --text:#1f2328; --muted:#656d76; --accent:#0969da; }
@@ -49,7 +49,7 @@ def _tables(con) -> List[tuple]:
 
 
 def render(dbs: List[Path], db_i: Optional[int], table: Optional[str], limit: int) -> str:
-    root = repo_root()
+    root = route("workspace").parent
     nav = ["<h1>DuckDB viewer</h1><h2>Databases</h2><ul>"]
     for i, p in enumerate(dbs):
         label = p.relative_to(root) if p.is_relative_to(root) else p

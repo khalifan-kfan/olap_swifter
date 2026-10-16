@@ -20,7 +20,7 @@ def isolated_root(tmp_path_factory):
     (root / "resources").mkdir()
     for name in ("ROUTES.yaml", "config.yaml"):
         shutil.copy(RESOURCES / name, root / "resources" / name)
-    shutil.copytree(Path(__file__).parent / "fixtures" / "schemas", root / "scratch_workspace" / "schemas")
+    shutil.copytree(Path(__file__).parent / "fixtures" / "schemas", root / "results_workspace" / "schemas")
     old = os.environ.get("OLAP_SWIFTER_ROOT")
     os.environ["OLAP_SWIFTER_ROOT"] = str(root)
     yield root

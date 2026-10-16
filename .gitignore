@@ -45,5 +45,5 @@ playwright-report/
 
 # Workspace: every run's outputs (warehouses, dummy data, per-dataset work,
 # past runs). Never committed. See resources/ROUTES.yaml.
-scratch_workspace/
+results_workspace/
 resources/datasets/

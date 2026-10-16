@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from olap_swifter.feedback.worklog import STAGES, log_step
-from olap_swifter.paths import route, workspace_path
+from olap_swifter.paths import make_workspace, route, workspace_path, zip_workspace
 from olap_swifter.schema.constellation_view import build_view, render_markdown
 from olap_swifter.schema.describe import describe
 from olap_swifter.schema.extender import attach_dataset, extend_schema
@@ -35,9 +35,9 @@ schema_app = typer.Typer(help="Registered schemas: list, show, validate, registe
 source_app = typer.Typer(help="Datasets: build an EDA, match a dataset against the registry.")
 
 CATALOGUE_HELP = "Data catalogue / dictionary: a CSV or YAML file, or a folder of them (merged). Required."
-EDA_HELP = "The dataset's EDA file, or a folder with one EDA per data file (`source eda` writes them). Required."
-MAIN_FACT_HELP = "The dataset's own main fact table (from the description's main_event); defaults to the schema's."
-DESCRIPTION_HELP = "Path to the filled dataset description template (resources/templates/dataset_description.yaml)."
+EDA_HELP = "The dataset's EDA (Exploratory Data Analysis) file, or a folder with one EDA per data file (`source eda` writes them). Required."
+MAIN_FACT_HELP = "The dataset's own main fact table (from the dataset concept's main_event); defaults to the schema's."
+DESCRIPTION_HELP = "The dataset concept: inputs/<dataset>/dataset_concept.yaml (template: resources/templates/dataset_concept.yaml)."
 
 
 def _emit(obj: Any, as_json: bool, render=None):
@@ -155,7 +155,7 @@ def schema_register(
     dataset: str = typer.Option(..., help="Dataset this new schema is modelled from"),
     catalogue: str = typer.Option(..., help=CATALOGUE_HELP),
     eda: str = typer.Option(..., help=EDA_HELP),
-    description: Optional[str] = typer.Option(None, help=DESCRIPTION_HELP),
+    description: Optional[str] = typer.Option(None, "--concept", "--description", help=DESCRIPTION_HELP),
     main_fact: Optional[str] = typer.Option(None, help=MAIN_FACT_HELP),
     as_json: bool = typer.Option(False, "--json"),
 ):
@@ -179,7 +179,7 @@ def schema_extend(
     dataset: str = typer.Option(..., help="Dataset that motivated the extension"),
     catalogue: str = typer.Option(..., help=CATALOGUE_HELP),
     eda: str = typer.Option(..., help=EDA_HELP),
-    description: Optional[str] = typer.Option(None, help=DESCRIPTION_HELP),
+    description: Optional[str] = typer.Option(None, "--concept", "--description", help=DESCRIPTION_HELP),
     main_fact: Optional[str] = typer.Option(None, help=MAIN_FACT_HELP),
     as_json: bool = typer.Option(False, "--json"),
 ):
@@ -202,7 +202,7 @@ def schema_attach(
     dataset: str = typer.Option(...),
     catalogue: str = typer.Option(..., help=CATALOGUE_HELP),
     eda: str = typer.Option(..., help=EDA_HELP),
-    description: Optional[str] = typer.Option(None, help=DESCRIPTION_HELP),
+    description: Optional[str] = typer.Option(None, "--concept", "--description", help=DESCRIPTION_HELP),
     main_fact: Optional[str] = typer.Option(None, help=MAIN_FACT_HELP),
     as_json: bool = typer.Option(False, "--json"),
 ):
@@ -247,14 +247,14 @@ def source_eda(
 
 @source_app.command("describe")
 def source_describe(
-    name: str = typer.Argument(..., help="Dataset name = its folder under scratch_workspace/inputs/"),
+    name: str = typer.Argument(..., help="Dataset name = its folder under the workspace's inputs/"),
     study: str = typer.Option("", help="2-5 sentences: population, setting, purpose"),
     main_question: str = typer.Option("", help="The primary analysis the warehouse must answer"),
     one_row_is: str = typer.Option("", help="What one row of the export represents"),
     main_event: str = typer.Option("", help="The event counted or measured (becomes the main fact)"),
     as_json: bool = typer.Option(False, "--json"),
 ):
-    """Writes scratch_workspace/inputs/<name>/description.yaml (and the EDA if missing). Same as `describe(...)`."""
+    """Writes inputs/<name>/dataset_concept.yaml (and the EDA if missing). Same as `describe(...)`."""
     try:
         result = describe(name, study, main_question, one_row_is, main_event, quiet=True)
     except (FileNotFoundError, ValueError) as e:
@@ -266,10 +266,10 @@ def source_describe(
 
 @source_app.command("values")
 def source_values(
-    dataset: str = typer.Argument(..., help="Dataset name (its folder under scratch_workspace/inputs/)"),
+    dataset: str = typer.Argument(..., help="Dataset name (its folder under results_workspace/inputs/)"),
     variable: str = typer.Argument(..., help="Vocabulary variable to list, e.g. ward"),
     by: Optional[str] = typer.Option(None, help="Also list where each label is seen, e.g. hospital_code"),
-    crosswalk: Optional[str] = typer.Option(None, help="Merge new labels into scratch_workspace/schemas/crosswalks/<name>.yaml"),
+    crosswalk: Optional[str] = typer.Option(None, help="Merge new labels into results_workspace/schemas/crosswalks/<name>.yaml"),
     as_json: bool = typer.Option(False, "--json"),
 ):
     """Distinct labels of a vocabulary variable (ward, unit, specimen...) with counts, for a crosswalk."""
@@ -278,7 +278,7 @@ def source_values(
     if not files:
         _fail(f"no data files in {folder / 'data'}", as_json)
     try:
-        out = label_counts(files, variable, by, str(folder / "description.yaml"))
+        out = label_counts(files, variable, by, str(folder / "dataset_concept.yaml"))
     except VocabularyError as e:
         _fail(str(e), as_json)
     if crosswalk:
@@ -305,7 +305,7 @@ def source_values(
 def source_match(
     catalogue: str = typer.Option(..., help=CATALOGUE_HELP),
     eda: str = typer.Option(..., help=EDA_HELP),
-    description: Optional[str] = typer.Option(None, help=DESCRIPTION_HELP),
+    description: Optional[str] = typer.Option(None, "--concept", "--description", help=DESCRIPTION_HELP),
     as_json: bool = typer.Option(False, "--json"),
 ):
     """Scores the dataset against every registered schema: fit, extend or new_schema."""
@@ -460,6 +460,7 @@ def log(
     dataset: str = typer.Option(..., help="Dataset the step was for"),
     failed: bool = typer.Option(False, "--failed", help="The step failed"),
     note: str = typer.Option("", help="Short summary (counts only, never data values)"),
+    tokens: Optional[int] = typer.Option(None, help="The agent's own token use so far, as the host reports it"),
     passed: Optional[int] = typer.Option(None, help="Tests passed"),
     total: Optional[int] = typer.Option(None, help="Tests run"),
 ):
@@ -467,12 +468,41 @@ def log(
     if stage not in STAGES:
         _fail(f"unknown stage {stage!r}; use one of {', '.join(STAGES)}", False)
     counts = {"passed": f"{passed}/{total}"} if passed is not None and total is not None else {}
+    if tokens is not None:
+        counts["tokens"] = tokens
     log_step(stage, not failed, dataset, note=note, **counts)
     console.print(f"[green]✓ logged {stage}[/green] -> {route('model_reviewer')}")
 
 
+def workspace(
+    dataset: Optional[str] = typer.Option(None, help="Also make this dataset's inputs folder"),
+    zip_it: bool = typer.Option(False, "--zip", help="Zip the workspace for download (raw data/ exports left out)"),
+    include_data: bool = typer.Option(False, help="With --zip: put the raw data/ exports in too"),
+    as_json: bool = typer.Option(False, "--json"),
+):
+    """Creates the results workspace (outside the skill) and its README; prints the paths to give the user."""
+    try:
+        out = make_workspace(dataset)
+    except ValueError as e:
+        _fail(str(e), as_json)
+    if zip_it:
+        out.update(zip_workspace(include_data=include_data))
+
+    def render(o):
+        say = lambda t: console.print(t, soft_wrap=True)  # noqa: E731  paths stay copyable
+        say(f"[bold green]Results workspace:[/bold green] {o['workspace']}")
+        say(f"  key (README): {o['readme']}")
+        say(f"  review page:  {o['review_page']}")
+        if "inputs" in o:
+            say(f"  put the dataset in: {o['inputs']}")
+        if "zip" in o:
+            say(f"  zip: {o['zip']} ({o['files']} files)")
+    _emit(out, as_json, render)
+
+
 def register(app: typer.Typer):
     app.add_typer(schema_app, name="schema")
+    app.command()(workspace)
     app.add_typer(source_app, name="source")
     app.command()(synth)
     app.command()(etl)

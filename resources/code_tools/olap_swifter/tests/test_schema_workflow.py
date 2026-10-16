@@ -208,7 +208,7 @@ def test_describe_from_inputs_folder(registry, hiv_files, tmp_path):
     from olap_swifter.schema.describe import blank_description
     from olap_swifter.schema.profile import load_description
 
-    template = yaml.safe_load((RESOURCES / "templates" / "dataset_description.yaml").read_text())
+    template = yaml.safe_load((RESOURCES / "templates" / "dataset_concept.yaml").read_text())
     shape = lambda d: {k: sorted(v) if isinstance(v, dict) else None for k, v in d.items()}  # noqa: E731
     assert shape(template) == shape(blank_description())
 
@@ -249,7 +249,7 @@ def test_describe_from_inputs_folder(registry, hiv_files, tmp_path):
     assert [v for v in variables if v["name"] == "visit_id"][0]["files"] == ["viral_loads", "visits"]
 
     # The skill fills its sections; re-running describe keeps them and makes no new EDA.
-    desc_path = folder / "description.yaml"
+    desc_path = folder / "dataset_concept.yaml"
     doc = yaml.safe_load(desc_path.read_text())
     doc["visit"]["identifier"] = "visit_id"
     doc["relationship_to_existing"].update({"schema": "clinical_visit", "decision": "extend"})
@@ -337,7 +337,7 @@ def test_ward_crosswalk_keeps_raw_label_and_maps_standard_type(registry, tmp_pat
     ids.write_text("visit_id,patient_name\n" + "".join(f"V{i},Name {i}\n" for i in range(60)))
     with pytest.raises(VocabularyError, match="identifier or free text"):
         label_counts([str(ids)], "visit_id")
-    desc = tmp_path / "description.yaml"
+    desc = tmp_path / "dataset_concept.yaml"
     desc.write_text(yaml.safe_dump({"privacy": {"direct_identifiers": ["patient_name"]}}))
     with pytest.raises(VocabularyError, match="marked as an identifier"):
         label_counts([str(ids)], "patient_name", description=str(desc))

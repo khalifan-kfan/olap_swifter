@@ -1,16 +1,18 @@
 """
-Dataset Description in one line.
-Every dataset's inputs live in one folder, `scratch_workspace/inputs/<name>/`; a
-dataset often comes as several files, so each kind of input is a folder:
+Dataset concept in one line.
+Every dataset's inputs live in one folder, `inputs/<name>/` in the results
+workspace; a dataset often comes as several files, so each kind of input is a
+folder:
 
-    catalogue/        (required) one or more data dictionaries (.csv / .yaml / .yml)
-    data/             one or more raw CSV exports; only the code tools open them
-    eda/              one EDA per data file (eda/<file>.yaml); made from data/ if absent
-    codes/            code lists / vocabularies, one file each
-    description.yaml  written here
+    catalogue/            (required) one or more data dictionaries (.csv / .yaml / .yml)
+    data/                 one or more raw CSV exports; only the code tools open them
+    eda/                  one EDA (Exploratory Data Analysis) per data file; made from data/ if absent
+    codes/                code lists / vocabularies, one file each
+    documents/            source documents (protocol, SOP); read only for the concept's answers
+    dataset_concept.yaml  written here: what the dataset is, and how the skill modelled it
 
-`describe` writes the user's part of the description (the shape of
-resources/templates/dataset_description.yaml) from four answers:
+`describe` writes the user's part of the dataset concept (the shape of
+resources/templates/dataset_concept.yaml) from four answers:
 
     python -c "from olap_swifter import describe; describe('hiv_site_b', study='Adults on ART at 4 clinics, 2023-2025.', main_question='What share of patients are virally suppressed?', one_row_is='one viral load test', main_event='viral load test')"
 
@@ -34,7 +36,7 @@ CATALOGUE_DIR = "catalogue"
 DATA_DIR = "data"
 EDA_DIR = "eda"
 CODES_DIR = "codes"
-DESCRIPTION_NAME = "description.yaml"
+DESCRIPTION_NAME = "dataset_concept.yaml"  # the dataset concept
 
 
 def blank_description() -> Dict[str, Any]:
@@ -113,7 +115,11 @@ def _code_entries(folder: Path, codes: Union[None, Dict[str, str], List[Dict[str
 
 
 def _eda_for(data_file: Path, eda_dir: Path, cfg: Dict[str, Any]) -> (Path, bool):
-    """The EDA of one data file: eda/<stem>.yaml, made (aggregates only) when absent."""
+    """
+    The EDA of one data file: an existing eda/<stem>.yaml/.yml/.json/.csv (the
+    user's own, or a ydata-profiling JSON report), else eda/<stem>.yaml made
+    here (aggregates only).
+    """
     existing = [eda_dir / f"{data_file.stem}{suffix}" for suffix in EDA_SUFFIXES]
     for path in existing:
         if path.exists():
@@ -130,7 +136,7 @@ def describe(name: str, study: str = "", main_question: str = "", one_row_is: st
              inputs_dir: Optional[str] = None, registry: Optional[SchemaRegistry] = None,
              quiet: bool = False, **optional: Any) -> Dict[str, Any]:
     """
-    Writes `<inputs>/<name>/description.yaml`. Reads every dictionary in
+    Writes `<inputs>/<name>/dataset_concept.yaml`. Reads every dictionary in
     catalogue/ and every CSV in data/; each data file without an EDA in eda/
     gets one (aggregates only, small cells hidden). `codes` maps variables to
     files in codes/, e.g. {'diagnosis_code': 'icd10.csv'}. Re-running keeps
@@ -184,12 +190,12 @@ def describe(name: str, study: str = "", main_question: str = "", one_row_is: st
     doc["codes_and_vocabularies"] = _code_entries(
         folder, codes if codes is not None else doc["codes_and_vocabularies"])
 
-    header = ("# Dataset description (template: resources/templates/dataset_description.yaml).\n"
+    header = ("# Dataset concept (template: resources/templates/dataset_concept.yaml).\n"
               "# User part written by olap_swifter.describe; visit, entities and\n"
               "# relationship_to_existing are filled by the skill.\n")
     out_path.write_text(header + yaml.safe_dump(doc, sort_keys=False, allow_unicode=True), encoding="utf-8")
 
-    result = {"ok": True, "folder": str(folder), "description": str(out_path),
+    result = {"ok": True, "folder": str(folder), "dataset_concept": str(out_path),
               "catalogue": str(cat_dir), "catalogue_files": [c.name for c in catalogues],
               "eda": str(eda_dir), "eda_generated": generated, "data_files": files,
               "sources": [normalize_name(f"{name}_{Path(f['data']).stem}") for f in files],

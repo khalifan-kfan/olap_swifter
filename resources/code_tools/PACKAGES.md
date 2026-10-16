@@ -33,6 +33,12 @@ vulnerabilities** after the upgrades noted below.
 | pip | 26.2.1 | 23.1.2 had PYSEC-2023-228 and PYSEC-2026-196/1795/1796/2875/2876/3721 |
 | setuptools | 84.0.0 | 65.5.0 had PYSEC-2022-43012, PYSEC-2025-49, PYSEC-2026-1918/3447 |
 
+## Optional, not installed
+
+| Package | Used by | Notes |
+| :--- | :--- | :--- |
+| ydata-profiling | the user, to make an EDA in one line (HOW_TO_RUN.md, Step 1) | Not a dependency: 4.18.4 needs pandas < 3, and this repo runs pandas 3. Install it in its own environment. The tools only read its JSON report (`schema/profile.py`), so nothing here imports it. |
+
 ## Dev
 
 | Package | Floor | Installed | Notes |

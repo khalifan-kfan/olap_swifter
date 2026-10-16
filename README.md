@@ -8,6 +8,9 @@
 
 ## What it does
 
+(Words like *fact*, *dimension*, *grain* and *crosswalk* are defined under
+[TERMS.md](resources/instructions/TERMS.md).)
+
 Clinical data usually arrives as one very wide spreadsheet: one row per record,
 dozens of columns mixing patients, facilities, diagnoses, drugs and lab results
 all together. That shape is fine for collecting data and useless for analysing
@@ -25,13 +28,14 @@ must link to a visit, and every total must still match the original file.
 
 ---
 
-## The three documents
+## The four documents
 
 | File | Read it when |
 | :--- | :--- |
 | **[SKILL.md](SKILL.md)** | You want the rules and the thinking — what a good model looks like and why. |
 | **[HOW_TO_RUN.md](resources/instructions/HOW_TO_RUN.md)** | You want to actually run something: commands, SQL, code, tests. |
 | **[TEST.md](TEST.md)** | You want the sub-agent test prompts and their pass conditions. |
+| **[TERMS.md](resources/instructions/TERMS.md)** | A word is unfamiliar: crosswalk, grain, gate, patch, alias and the rest, in plain language. |
 
 `SKILL.md` deliberately contains no commands. `HOW_TO_RUN.md` deliberately
 contains all of them. [`resources/ROUTES.yaml`](resources/ROUTES.yaml) says where
@@ -51,14 +55,14 @@ the description, and switches it on when your request matches.
 ```bash
 cd /usr/olap_swifter
 mkdir -p .agents/skills/medical-olap-orchestrator
-cp SKILL.md TEST.md resources/instructions/HOW_TO_RUN.md .agents/skills/medical-olap-orchestrator/
+cp SKILL.md TEST.md resources/instructions/HOW_TO_RUN.md resources/instructions/TERMS.md .agents/skills/medical-olap-orchestrator/
 ```
 
 **For every project on this machine:**
 
 ```bash
 mkdir -p ~/.gemini/config/skills/medical-olap-orchestrator
-cp SKILL.md TEST.md resources/instructions/HOW_TO_RUN.md ~/.gemini/config/skills/medical-olap-orchestrator/
+cp SKILL.md TEST.md resources/instructions/HOW_TO_RUN.md resources/instructions/TERMS.md ~/.gemini/config/skills/medical-olap-orchestrator/
 ```
 
 The folder must be named `skills/<skill-name>/` and must contain `SKILL.md`.
@@ -79,9 +83,22 @@ language is enough:
 I have a new dataset to build a medical OLAP warehouse from
 ```
 
-Before anything else, the skill asks you for everything in the dataset
-description template (the study, the main question, what one row is, the
-files, privacy) in one message, and tells you where to put the files.
+Before anything else, the skill creates your **results workspace**
+(`results_workspace/`, in the folder you are working in, outside the skill),
+asks you for everything in the **dataset concept** template (the study, the
+main question, what one row is, the files, privacy) in one message, and tells
+you where to put the files.
+
+It never reads your data rows: it works from the catalogue and an **EDA
+(Exploratory Data Analysis)**, a summary of the data's shape (column types,
+missing values, ranges, category counts) with no rows in it. Give one, make one
+with a ydata-profiling one-liner (see HOW_TO_RUN.md), or let the tools make it
+from the data.
+
+When it is done it hands you the workspace: its `README.md` is the results key
+(a link to the review page `review/model_reviewer.html`, the folder structure,
+and the decisions made for each dataset). In a chat, it offers the workspace as
+a zip to download.
 
 ```
 Model this clinical CSV as a fact constellation and prove no column was lost
@@ -160,23 +177,25 @@ olap_swifter/
 │   ├── ROUTES.yaml           # Routing key: where every resource lives, by name
 │   ├── instructions/         # HOW_TO_RUN.md, OCR.md, ocr_assets/ (diagrams, sample forms)
 │   ├── config.yaml           # Generic thresholds (match, EDA privacy, dummy cap)
-│   ├── templates/            # Dataset description template
+│   ├── templates/            # Dataset concept template
 │   ├── datasets/             # Sample CSVs for the tool tests (git-ignored)
 │   └── code_tools/
 │       ├── olap_swifter/     # Warehouse: schema, ETL, checks, cube, reviewer, CLI, tests
 │       ├── ocr_tools/        # OCR: preprocessing, Tesseract, handwriting, parsing
 │       └── privacy_tools/    # Presidio de-identification
-└── scratch_workspace/        # Git-ignored: everything dataset-specific; INDEX.md lists it
-    ├── inputs/<name>/        # Your datasets: catalogue/, data/, eda/, codes/, description.yaml
+└── results_workspace/        # Results workspace (git-ignored); README.md is its key
+    ├── inputs/<name>/        # Your datasets: catalogue/, data/, eda/, codes/, documents/, dataset_concept.yaml
     ├── schemas/              # The live schema registry + crosswalks/, built from your datasets
     ├── warehouse/            # The output DuckDB files
     └── ...                   # dummy data, per-dataset outputs, process log, past runs
 ```
 
 Nothing under `resources/` is about a particular dataset: it is the skill's
-tools, instructions and generic settings. **Your datasets go in
-`scratch_workspace/inputs/<name>/`**, and the schemas built from them live in
-`scratch_workspace/schemas/`. None of it is ever committed. On a fresh clone the
+tools, instructions and generic settings. The results workspace is shown here
+as it lands when you run the tools from inside this repo; run them from your
+own project folder and it is created there instead. **Your datasets go in
+`results_workspace/inputs/<name>/`**, and the schemas built from them live in
+`results_workspace/schemas/`. None of it is ever committed. On a fresh clone the
 registry starts empty, so the first dataset is modelled as a new schema.
 
 ---
@@ -213,7 +232,7 @@ Automating medical digitization and OLAP aggregation with AI introduces high-sta
   - *Guardrail*: Outputs must never be fed directly into active bedside treatment algorithms without direct clinician review.
 - **De-identification is English-only (Presidio)**:
   - Presidio's models are English. Text in another language can have ordinary local terms redacted as names, and real names missed.
-  - *Guardrail*: flag variables and terms recorded in another language in the dataset description (`privacy.other_language_vocabulary`) so they are kept as written and not anonymised, and have a person check names in that language.
+  - *Guardrail*: flag variables and terms recorded in another language in the dataset concept (`privacy.other_language_vocabulary`) so they are kept as written and not anonymised, and have a person check names in that language.
 - **Re-Identification of Vulnerable Populations**:
   - Even without direct names, high-dimensional OLAP slicing combining facility + rare diagnosis + exact visit date + age group can re-identify marginalized patients (e.g., HIV, MDR-TB, stigmatized conditions).
   - *Guardrail*: Enforce k-anonymity thresholds ($k \ge 5$) on cube rollups and suppress small cell counts before exporting reports.
@@ -223,7 +242,7 @@ Automating medical digitization and OLAP aggregation with AI introduces high-sta
 
 ### 3. Docker Compose Setup for the Skills (Next Iteration)
 Testing the skill today depends on a local `.venv`, a system DuckDB, and the machine-specific paths in `HOW_TO_RUN.md`. That makes results hard to reproduce across contributors and CI. For the next iterations:
-- **`docker-compose.yml` at the repo root**: One service that installs `resources/code_tools`, mounts the repo (inputs and `scratch_workspace/` included), and exposes the `olap_swifter.cli` entry point (`build`, `profile`, `review`).
+- **`docker-compose.yml` at the repo root**: One service that installs `resources/code_tools`, mounts the repo (inputs and `results_workspace/` included), and exposes the `olap_swifter.cli` entry point (`build`, `profile`, `review`).
 - **One-command test run**: `docker compose run --rm olap pytest -v` should execute the full suite against a clean container, so sub-agents in `TEST.md` can be run without touching the host environment.
 - **Pin the toolchain**: Lock Python, DuckDB and (later) Tesseract/Presidio versions in the image so the OCR pipeline from item 1 can be tested in the same container.
 - **Update `HOW_TO_RUN.md`**: Replace the absolute `/Users/...` paths with container paths and add a "Run with Docker" section alongside the `.venv` instructions.

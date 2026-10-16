@@ -1,7 +1,8 @@
 # Semantic Test Suite (`TEST.md`)
 
 This file defines **what must be proven** about a generated OLAP warehouse —
-not how to prove it for any one dataset.
+not how to prove it for any one dataset. Terms such as grain, staging, gate,
+crosswalk and fan-out are defined in [TERMS.md](resources/instructions/TERMS.md).
 
 There are no fixed column names here, no fixed table names and no ready-made
 SQL. The skill is a context-aware ETL: it discovers the schema at run time, so

@@ -1,12 +1,17 @@
 # ---------------------------------------------------------------------------
-# Dataset Description — one per dataset, kept in its inputs folder:
+# Dataset Concept — what the dataset is, and how the skill modelled it.
+# One per dataset, kept in its inputs folder in the results workspace:
 #
-#   scratch_workspace/inputs/<dataset name>/
+#   results_workspace/inputs/<dataset name>/
 #       catalogue/             (required) one or more data dictionaries (.csv / .yaml / .yml)
 #       data/                  one or more raw CSV exports; only the code tools open them
-#       eda/                   one EDA per data file (eda/<file>.yaml); made from data/ if absent
+#       eda/                   one EDA (Exploratory Data Analysis: column types, missing values,
+#                              ranges, category counts, no rows) per data file. Give your own,
+#                              make one with ydata-profiling (HOW_TO_RUN.md), or leave it empty:
+#                              it is made from data/ when missing
 #       codes/                 code lists / vocabularies, one file each
-#       description.yaml       this file
+#       documents/             protocol, SOP, report (read only for this file's answers)
+#       dataset_concept.yaml   this file
 #
 # Write it in one line (paths are found in the folder; the EDA is made if missing):
 #   python -c "from olap_swifter import describe; describe('my_dataset', study='...', main_question='...', one_row_is='...', main_event='...')"
@@ -14,7 +19,7 @@
 # (see HOW_TO_RUN.md).
 #
 # The skill never reads your data rows. It models from the catalogue, the EDA
-# and this description.
+# and this dataset concept.
 # ---------------------------------------------------------------------------
 
 # ============ Filled by the user (fields marked (required)) ============

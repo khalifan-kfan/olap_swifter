@@ -1,12 +1,14 @@
 ---
 name: medical-olap-orchestrator
-description: Use this skill when the user wants to turn a clinical or health dataset (any domain — AMR, HIV, TB, maternal health, routine care) into a medical OLAP data warehouse. Given the dataset's description, catalogue and EDA, the agent matches it against the registry of built schemas, fits or extends an existing schema or models a new one around the visit spine, proves the schema and ETL on dummy data, and only then loads real data — seeing execution results, never the data itself.
+description: Use this skill when the user wants to turn a clinical or health dataset (any domain — AMR (antimicrobial resistance), HIV, TB, maternal health, routine care) into a medical OLAP (analysis) data warehouse. Given the dataset's concept, catalogue and EDA (Exploratory Data Analysis), the agent matches it against the registry of built schemas, fits or extends an existing schema or models a new one around the visit spine, proves the schema and ETL on dummy data, and only then loads real data — seeing execution results, never the data itself.
 ---
 
 # Medical OLAP Orchestrator
 
 This skill teaches the agent **how to think** about turning a wide clinical
-dataset into a trustworthy OLAP warehouse. The skill is the orchestrator: it
+dataset (one flat export, many columns) into a trustworthy OLAP warehouse — a
+database built for analysis. Every term is defined in
+[TERMS.md](resources/instructions/TERMS.md). The skill is the orchestrator: it
 makes every modelling decision. The code tools only execute those decisions and
 report back.
 
@@ -14,20 +16,35 @@ It is the *what* and *why*. The *how* lives in companion files:
 
 - **[HOW_TO_RUN.md](resources/instructions/HOW_TO_RUN.md)** — every command, file path and file format.
 - **[TEST.md](TEST.md)** — the sub-agent test mandates and their pass conditions.
-- **`resources/templates/dataset_description.yaml`** — what to ask the user, and
-  the sections the agent fills in itself.
+- **`resources/templates/dataset_concept.yaml`** — the dataset concept: what to
+  ask the user, and the sections the agent fills in itself.
 - **[`resources/ROUTES.yaml`](resources/ROUTES.yaml)** — the routing key: where
   every resource, input and output lives, by name.
+- **[TERMS.md](resources/instructions/TERMS.md)** — what every term means
+  (crosswalk, grain, gate, patch, alias…). Read it before the rules below.
 
-Do not put commands or paths in this file beyond those four. Keep them in
+Do not put commands or paths in this file beyond those five. Keep them in
 `HOW_TO_RUN.md` and `ROUTES.yaml`.
 
-**Keep the repo clean.** Everything a run produces — warehouses, dummy data,
-patches, ETL and processing scripts written for a dataset, test scripts, notes,
-reports — goes in the git-ignored **workspace**,
-in the dataset's own folder there. Never write outputs to the repo root or into
-`resources/`. The workspace's index says what each file is. Its **experience** folder holds
-past runs: read their reports when a similar dataset arrives.
+**Keep the skill clean: results go in the results workspace, outside the
+skill.** Everything a run produces — warehouses, dummy data, patches, ETL and
+processing scripts written for a dataset, test scripts, notes, reports — goes
+in the **results workspace** (`results_workspace/`), in the dataset's own
+folder there. Never write outputs into the skill's folder or `resources/`.
+
+- **In a working folder** (a terminal or IDE session): create the results
+  workspace in the user's folder, not inside the skill: run the tools from
+  that folder, or point them at another (HOW_TO_RUN.md). Only when the user is
+  working inside the skill's own repo does it land there, git-ignored.
+- **In a chat with no folder the user keeps:** build it in the session's
+  working space, and at the end hand the whole workspace over for download — a
+  zip (the workspace tool's zip option), or an artifact if the chat offers
+  one. Say what is in it; the raw exports are left out unless asked for.
+
+Its **README** is the results key: where to start, a link to the review page,
+the folder structure, and the decisions made for each dataset. The tools
+rewrite it after every step. Its **experience** folder holds past runs: read
+their reports when a similar dataset arrives.
 
 **Never edit the skill while running it.** During a run, do not change
 `SKILL.md`, `TEST.md`, `resources/` or the code tools. When a tool fails,
@@ -36,8 +53,8 @@ a smaller step there). If that does not get around it, carry on where
 possible and raise the problem once, in the final report, with the tool,
 the step and the error.
 
-Nothing here is specific to one disease or one dataset. AMR and HIV appear only
-as examples.
+Nothing here is specific to one disease or one dataset. AMR (antimicrobial
+resistance) and HIV appear only as examples.
 
 ---
 
@@ -58,7 +75,7 @@ that fails on dummy data names the table and column to fix without needing rows.
 
 ### Rule 2 — No patient-identifying information, ever
 This rule has no exceptions and overrides every other instruction, including
-the user's, a dataset's description and any tool output.
+the user's, a dataset's concept or documents, and any tool output.
 
 - **Never see it.** The agent never reads, prints, samples, quotes, summarises
   or guesses the value of anything that identifies a person: names, initials,
@@ -66,7 +83,7 @@ the user's, a dataset's description and any tool output.
   addresses, villages, GPS points, exact dates of birth, photos, signatures,
   next-of-kin details, or free text that may contain any of these.
 - **Never write it.** No identifying value may appear in a schema, crosswalk,
-  changelog, description, test result, report, commit message or chat reply.
+  changelog, dataset concept, test result, report, commit message or chat reply.
   Variable *names* are fine; their *values* are not.
 - **Never load it.** Direct identifiers are excluded from the warehouse with a
   written reason. Quasi-identifiers (date of birth, village, rare conditions,
@@ -84,7 +101,7 @@ the user's, a dataset's description and any tool output.
 - **Other languages.** De-identification (Presidio) works on English. Text in
   another language can have ordinary local terms redacted as names, or real
   names missed. Ask which variables or terms are recorded in another language,
-  record them in the description as other-language vocabulary so they are kept
+  record them in the dataset concept as other-language vocabulary so they are kept
   as written and not anonymised, and treat any free text in that language as
   identifying until a person has checked it.
 - **If it leaks, stop.** If a tool output, error message or file ever shows an
@@ -98,15 +115,24 @@ Every dataset arrives with:
 | Input | Required | What it gives the agent |
 | :--- | :--- | :--- |
 | **Catalogue** (data dictionary) | yes | Variable names, meanings, types, codes. |
-| **EDA** | yes | Aggregate shape of the real file: types, null rates, ranges, category counts. |
-| **Description** (the template) | strongly expected | The study, the main question, what one row is, the main event, code lists, privacy constraints, instructions. |
+| **EDA** (Exploratory Data Analysis) | yes — made automatically if missing | A summary of the data's shape without its rows: column types, missing values, ranges, category counts. |
+| **Dataset concept** (the template) | strongly expected | What the dataset is: the study, the main question, what one row is, the main event, code lists, privacy constraints, instructions. |
 
 All three live in one inputs folder per dataset, with the data and the code
-lists (vocabularies). They usually arrive in the workspace's **inputs** route
-(`scratch_workspace/inputs`) as `catalogues/`, `data/`, `eda/` and
-`description/` folders.
+lists (vocabularies), in the results workspace's **inputs** route
+(`inputs/<dataset>/`) as `catalogue/`, `data/`, `eda/`, `codes/` and
+`documents/` folders, with the `dataset_concept.yaml` beside them.
 
-**The description is often a large document** (a protocol, an SOP, a report),
+**Because the agent works from the EDA and never from the rows, an EDA is the
+one input the tools can make themselves.** The user may give one, or make one
+in one line with ydata-profiling (HOW_TO_RUN.md has the line); otherwise the
+tools check each data file for an EDA and make the missing ones (aggregates
+only, rare categories pooled). Tell the user this when asking for inputs. Read
+an EDA only through the tools, never by opening the file: a ydata-profiling
+report lists every value of every column, identifiers included, and the tools
+keep only the aggregates.
+
+**The source documents are often large** (a protocol, an SOP, a report),
 not the template. Read it only for the template's answers: study, main
 question, what one row is, main event, code lists, privacy. Stop reading once
 those are found. Never summarise the whole document; ignore the rest
@@ -116,14 +142,15 @@ files. Catalogues and EDAs are merged by variable name, and every variable
 records which data files carry it. Each data file loads as its own source of
 the dataset. Paths always point inside that folder.
 
-Without a catalogue and an EDA, stop and ask for them. Without a description,
+Without a catalogue, stop and ask for it; without an EDA or the data it is
+made from, ask for one. Without a dataset concept,
 the main fact and the grain are guesses — say so, and ask the user to fill the
 template. Its questions exist because each answer drives a modelling decision.
 
 The user answers only what they know about the study. The **visit**,
 **entities** and **relationship to existing schemas** sections are the agent's
 work: it models them from the catalogue, the EDA and the registry match, and
-writes them into the description before attaching.
+writes them into the dataset concept before attaching.
 
 ### Rule 4 — Zero variable loss
 Every variable in the dataset must end up somewhere: a dimension attribute, a
@@ -219,7 +246,7 @@ constellation.
 
 ```mermaid
 graph TD
-    A[1. Collect description, catalogue, EDA] --> B[2. Understand the variables]
+    A[1. Collect dataset concept, catalogue, EDA] --> B[2. Understand the variables]
     B --> C[3. Match against the registry]
     C -- fit --> F[5. Attach the dataset]
     C -- extend --> D[4a. Write an additive patch]
@@ -236,12 +263,17 @@ graph TD
 
 ### Step 1 — Collect the inputs (first, before anything else)
 When someone starts with this skill, do nothing else first: no matching, no
-modelling, no tool runs. Read the description template and ask the user for
+modelling, no tool runs except creating the results workspace with this
+dataset's inputs folder, so you can tell the user where to put the files.
+Read the dataset concept template and ask the user for
 **everything in its user section in one message**, so they answer once:
 
 - the dataset's name and owner, and the period it covers;
-- its files: catalogue(s), data export(s) or EDA(s), code lists — placed in
-  the dataset's inputs folder (say where; offer the folder layout);
+- its files: catalogue(s), data export(s), code lists, and any source
+  documents — placed in the dataset's inputs folder (give the path and the
+  folder layout);
+- an EDA (Exploratory Data Analysis) if they have one, or the ydata-profiling
+  one-liner to make one; without either, the tools make it from the data;
 - the study: what it is (population, setting, purpose), its type, the main
   question, other questions it should answer;
 - the unit of analysis: what one row is, the main event, the main measures,
@@ -258,7 +290,7 @@ know". Wait for the answers. Do not guess them, and do not fill the skill's own
 sections (visit, entities, relationship to existing) from the user — those are
 modelled in Step 2.
 
-Then write the description with the one-line `describe(...)`
+Then write the dataset concept with the one-line `describe(...)`
 helper. It finds the files in the folder, makes the EDA from the data when
 there is none (without showing the agent any rows), lists the code lists with
 their sizes only, and writes the template's user sections. If the user would
@@ -269,14 +301,14 @@ Code lists can be large (a full ICD-10 list). The agent works from their names
 and sizes; it does not read them into context.
 
 ### Step 2 — Understand the variables
-From the catalogue and the description, decide for each variable what it is:
+From the catalogue and the dataset concept, decide for each variable what it is:
 
 - Does it **identify** something (visit, patient, facility, regimen, organism)? → a key.
 - Does it **describe a person, place or thing** and stay the same for that thing? → a dimension attribute.
 - Does it **record an event or a measurement**? → a fact measure or attribute.
 - Does it take **several values within one visit** (several diagnoses, drugs, tests)? → its own fact table, with a grain that says what one row is.
 
-The description's *main event* is the main fact. Use the EDA to confirm: null
+The dataset concept's *main event* is the main fact. Use the EDA to confirm: null
 rates show which variables travel together, distinct counts show which columns
 can be keys, ranges show what a measure looks like.
 
@@ -287,7 +319,7 @@ two columns: the site's label (an existing column, matched by alias) and a
 standard category with a crosswalk. Map every label. When unsure what a
 site-specific label means, ask the user rather than guess.
 
-Then fill the agent's sections of the description:
+Then fill the agent's sections of the dataset concept:
 
 - **visit** — the variable that identifies a visit, or how to derive one
   (Rule 5), what one visit means here, and its date.
@@ -313,9 +345,9 @@ required columns missing), **code gaps** (catalogue codes the schema does not
 allow) and, for unmatched variables, **tables in other schemas that already
 model them**. Resolve blockers in the patch. Reuse those tables. When two
 schemas tie, choose the one whose main facts answer questions closest to the
-description's main question — never by list order.
+dataset concept's main question — never by list order.
 
-Record the outcome in the description's **relationship_to_existing**: the
+Record the outcome in the dataset concept's **relationship_to_existing**: the
 schema, the decision, the datasets already attached to it that this one shares
 tables with, and the keys it shares. Attaching is refused until the visit
 identifier, schema and decision are filled.
@@ -326,7 +358,7 @@ exclusions — and why. The reason is written to the schema's changelog.
 
 **Modelling new:** start from the existing shared tables (visit spine, patient,
 facility) and add only what this study needs. Pick the main fact from the
-description. Give every fact a grain. Exclude direct identifiers and coarsen
+dataset concept. Give every fact a grain. Exclude direct identifiers and coarsen
 or exclude quasi-identifiers (Rule 2).
 
 In both cases, write each variable's rules into the schema: type, allowed codes,
@@ -336,7 +368,7 @@ additively too: add entries freely, but change an existing mapping only with
 the user's agreement.
 
 ### Step 5 — Attach the dataset
-Attaching records the dataset on the schema (its catalogue, EDA and description,
+Attaching records the dataset on the schema (its catalogue, EDA and dataset concept,
 and its own main fact) and tags every column it feeds.
 
 ### Step 6 — Prove it on dummy data
@@ -382,8 +414,15 @@ this dataset's tables filled, every step done so far, the field mapping and
 the checks. Its table picker shows one table at a time; use it to review a
 table on its own rather than the whole model. Record the TEST.md results
 there too (the tools cannot see them).
-Point the user to the review page, and report once, at the end, with:
+Hand the user the results workspace, and report once, at the end, with:
 
+- the link to the review page (`review/model_reviewer.html`) and to the
+  workspace README (the results key);
+- the token weight from the README: the skill's documents and the tool output
+  you read. If the host shows your own token use for the session, record it
+  first with the log tool so the README carries it too;
+- in a chat, the workspace as a zip or artifact to download (see "Keep the
+  skill clean");
 - the constellation view with this dataset's tables and variables highlighted,
   and the main fact it answers to;
 - the check and TEST.md summary for dummy and production runs (counts only);

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 import duckdb
 import yaml
 
+from olap_swifter.paths import route
 from olap_swifter.schema.spec import normalize_type
 
 DICTIONARY_FIELD_ALIASES = {
@@ -265,12 +266,69 @@ def load_dictionary(path: str) -> Dict[str, Any]:
     return {"path": str(path), "column_count": len(variables), "variables": variables}
 
 
+YDATA_TYPES = {"Numeric": "DOUBLE", "Text": "VARCHAR", "Categorical": "VARCHAR", "Boolean": "BOOLEAN",
+               "DateTime": "TIMESTAMP"}
+
+
+def _eda_privacy() -> Dict[str, int]:
+    """The EDA privacy thresholds from resources/config.yaml."""
+    cfg = {"eda_max_categories": 20, "eda_min_category_count": 5}
+    try:
+        cfg.update(yaml.safe_load(route("config").read_text(encoding="utf-8")) or {})
+    except FileNotFoundError:
+        pass
+    return {"max_categories": int(cfg["eda_max_categories"]),
+            "min_category_count": int(cfg["eda_min_category_count"])}
+
+
+def _is_ydata(data: Any) -> bool:
+    return isinstance(data, dict) and isinstance(data.get("variables"), dict) and "table" in data
+
+
+def _load_eda_ydata(path: Path, data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Reads a ydata-profiling JSON report into the same shape `profile_csv`
+    produces. The report keeps every value's count (identifiers included) and
+    may keep sample rows; only aggregates are taken, and category counts only
+    for low-cardinality variables, with small cells pooled as suppressed.
+    """
+    privacy = _eda_privacy()
+    variables = []
+    for name, v in data["variables"].items():
+        kind = v.get("type")
+        norm = YDATA_TYPES.get(kind, "VARCHAR")
+        if norm == "DOUBLE" and isinstance(v.get("min"), int) and isinstance(v.get("max"), int):
+            norm = "BIGINT"
+        nulls, distinct = int(v.get("n_missing") or 0), int(v.get("n_distinct") or 0)
+        stats: Dict[str, Any] = {"null_count": nulls, "null_pct": round(100.0 * float(v.get("p_missing") or 0), 2),
+                                 "distinct_count": distinct}
+        if norm in ("BIGINT", "DOUBLE", "TIMESTAMP"):
+            mn, mx, avg = v.get("min"), v.get("max"), v.get("mean")
+            stats.update({"min": mn if norm != "TIMESTAMP" else str(mn), "max": mx if norm != "TIMESTAMP" else str(mx)})
+            if norm != "TIMESTAMP":
+                stats["mean"] = round(avg, 4) if isinstance(avg, (int, float)) else None
+        counts = v.get("value_counts_without_nan")
+        if norm in ("VARCHAR", "BOOLEAN") and isinstance(counts, dict) and 0 < distinct <= privacy["max_categories"]:
+            shown = {str(k): int(n) for k, n in counts.items() if n >= privacy["min_category_count"]}
+            hidden = [int(n) for n in counts.values() if n < privacy["min_category_count"]]
+            stats["categories"] = shown
+            if hidden:
+                stats["suppressed_categories"] = {"labels": len(hidden), "rows": sum(hidden)}
+        stats["unique_per_row"] = bool(v.get("is_unique") and nulls == 0)
+        variables.append({"name": name, "type": norm, "source_type": f"ydata:{kind}", "stats": stats})
+    out = {"path": str(path), "column_count": len(variables), "variables": variables, "made_by": "ydata-profiling"}
+    if (data.get("table") or {}).get("n") is not None:
+        out["row_count"] = int(data["table"]["n"])
+    return out
+
+
 def load_eda(path: str) -> Dict[str, Any]:
     """
-    Reads an EDA file. EDAs produced by `profile_csv` (YAML/JSON with
-    `variables`) and minimal CSV EDAs (one row per variable) contribute
-    statistics to matching; any other EDA format is
-    accepted and recorded, for the skill to read, but adds no statistics.
+    Reads an EDA (Exploratory Data Analysis) file. EDAs produced by
+    `profile_csv` (YAML/JSON with `variables`), ydata-profiling JSON reports
+    and minimal CSV EDAs (one row per variable) contribute statistics to
+    matching; any other EDA format is accepted and recorded, for the skill to
+    read, but adds no statistics.
     A folder holds one EDA per data file; their variables are merged by name.
     """
     p = Path(path)
@@ -284,6 +342,8 @@ def load_eda(path: str) -> Dict[str, Any]:
         data = yaml.safe_load(p.read_text(encoding="utf-8"))  # YAML is a superset of JSON
         if isinstance(data, dict) and isinstance(data.get("variables"), list):
             return data
+        if _is_ydata(data):
+            return _load_eda_ydata(p, data)
     return {"path": str(path), "variables": [], "free_form": True}
 
 

@@ -4,7 +4,7 @@ Sites name the same thing differently ("Paediatric", "Pediatric", "Children's
 Ward", "Ward 4B"). The warehouse keeps each site's own label and adds a
 standard category through a crosswalk file the skill writes:
 
-    scratch_workspace/schemas/crosswalks/<name>.yaml
+    results_workspace/schemas/crosswalks/<name>.yaml
     entries:
       - {value: Pediatric, maps_to: Paediatric}
       - {value: Ward 4B, scope: HOSP-02, maps_to: Surgical}   # one site's own wording

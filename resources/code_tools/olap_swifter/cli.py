@@ -19,6 +19,13 @@ console = Console()
 schema_cli.register(app)
 
 
+@app.callback()
+def _meter_tokens():
+    """Counts each command's output (what the agent reads) into the workspace token log."""
+    from olap_swifter.feedback.token_meter import start
+    start()
+
+
 def MedicalOLAPOrchestrator(*args, **kwargs):
     # Imported lazily so the schema workflow runs without the reviewer/Playwright stack.
     from olap_swifter.orchestrator import MedicalOLAPOrchestrator as _Orchestrator

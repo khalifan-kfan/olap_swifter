@@ -11,13 +11,14 @@ routes:
 
   # ---- Instructions ----
   how_to_run:       {path: resources/instructions/HOW_TO_RUN.md, committed: true, what: "Every command, file path and file format"}
+  terms:            {path: resources/instructions/TERMS.md, committed: true, what: "What every term means (crosswalk, grain, gate, patch...)"}
   ocr_guide:        {path: resources/instructions/OCR.md, committed: true, what: "OCR pipeline (separate from the warehouse)"}
   ocr_assets:       {path: resources/instructions/ocr_assets, committed: true, what: "OCR diagram and sample scanned forms"}
   routes:           {path: resources/ROUTES.yaml, committed: true, what: "This file"}
 
   # ---- Generic settings and templates (no dataset-specific content) ----
   config:           {path: resources/config.yaml, committed: true, what: "Thresholds: match difference, EDA privacy, dummy row cap"}
-  description_template: {path: resources/templates/dataset_description.yaml, committed: true, what: "Questions to ask the user about a dataset"}
+  dataset_concept_template: {path: resources/templates/dataset_concept.yaml, committed: true, what: "The dataset concept: questions to ask the user about a dataset, and the sections the skill fills"}
   datasets:         {path: resources/datasets, committed: false, what: "Sample CSVs used by the code-tool tests"}
   test_fixtures:    {path: resources/code_tools/olap_swifter/tests/fixtures, committed: true, what: "Seed schemas the tests copy; never the live registry"}
 
@@ -28,17 +29,22 @@ routes:
   ocr_tools:        {path: resources/code_tools/ocr_tools, committed: true, what: "OCR: preprocessing, Tesseract, handwriting, field parsing, Docker runner"}
   privacy_tools:    {path: resources/code_tools/privacy_tools, committed: true, what: "Presidio de-identification (used by OCR)"}
 
-  # ---- Workspace: everything a run writes (never committed) ----
-  workspace:        {path: scratch_workspace, committed: false, what: "Dumping folder for run outputs; INDEX.md lists what is in it"}
-  inputs:           {path: scratch_workspace/inputs, committed: false, what: "One folder per dataset: catalogue/, data/, eda/, codes/, description/ (source docs such as a protocol or SOP), description.yaml. Put a new dataset here"}
-  schemas:          {path: scratch_workspace/schemas, committed: false, what: "Live schema registry built from your datasets, one YAML per schema. Starts empty"}
-  crosswalks:       {path: scratch_workspace/schemas/crosswalks, committed: false, what: "Site label -> standard category maps for the live registry"}
-  workspace_index:  {path: scratch_workspace/INDEX.md, committed: false, what: "What each dumped file is and how to reuse it (rewritten by the tools)"}
-  warehouse:        {path: scratch_workspace/warehouse/warehouse.duckdb, committed: false, what: "Production warehouse (real data)"}
-  warehouse_dummy:  {path: scratch_workspace/warehouse/warehouse_dummy.duckdb, committed: false, what: "Dummy warehouse (proving a schema)"}
-  dummy_data:       {path: scratch_workspace/dummy, committed: false, what: "Dummy CSV, catalogue and EDA per schema: dummy/<schema>/"}
-  dataset_outputs:  {path: scratch_workspace/datasets, committed: false, what: "Per dataset: constellation.md, patches/, scripts/ (ETL and processing scripts), tests/, notes"}
-  process_log:      {path: scratch_workspace/process_log.jsonl, committed: false, what: "Every tool step (counts only); feeds the review page"}
-  model_reviewer:   {path: scratch_workspace/review/model_reviewer.html, committed: false, what: "Review page: schema art, process done so far, field mapping, checks. Rewritten by the tools after every step"}
-  review:           {path: scratch_workspace/review, committed: false, what: "Last build summary and UI screenshots behind the review page"}
-  experience:       {path: scratch_workspace/experience, committed: false, what: "Past runs and reports the skill has learned from"}
+  # ---- Results workspace: everything a run writes (never committed) ----
+  # Lives outside the skill: $OLAP_SWIFTER_WORKSPACE, else results_workspace/
+  # in the folder the tools run from; only when run from inside this repo
+  # does it land here (git-ignored). Paths below are relative to it.
+  workspace:        {path: results_workspace, committed: false, what: "The results workspace; README.md is its key"}
+  workspace_readme: {path: results_workspace/README.md, committed: false, what: "The results key: where to start, the review page, the decisions made, the folder structure (rewritten by the tools)"}
+  inputs:           {path: results_workspace/inputs, committed: false, what: "One folder per dataset. Put a new dataset here"}
+  schemas:          {path: results_workspace/schemas, committed: false, what: "Live schema registry built from your datasets, one YAML per schema. Starts empty"}
+  crosswalks:       {path: results_workspace/schemas/crosswalks, committed: false, what: "Site label -> standard category maps for the live registry"}
+  warehouses:       {path: results_workspace/warehouse, committed: false, what: "The DuckDB warehouses (open read-only with `olap-swifter view`)"}
+  warehouse:        {path: results_workspace/warehouse/warehouse.duckdb, committed: false, what: "Production warehouse (real data)"}
+  warehouse_dummy:  {path: results_workspace/warehouse/warehouse_dummy.duckdb, committed: false, what: "Dummy warehouse (proving a schema)"}
+  dummy_data:       {path: results_workspace/dummy, committed: false, what: "Dummy CSV, catalogue and EDA per schema: dummy/<schema>/"}
+  dataset_outputs:  {path: results_workspace/datasets, committed: false, what: "Per dataset: constellation.md, patches/, scripts/ (ETL and processing scripts), tests/, notes"}
+  token_log:        {path: results_workspace/token_log.jsonl, committed: false, what: "Size of every CLI command's output, in estimated tokens; feeds the README's token weight"}
+  process_log:      {path: results_workspace/process_log.jsonl, committed: false, what: "Every tool step (counts only); feeds the review page"}
+  model_reviewer:   {path: results_workspace/review/model_reviewer.html, committed: false, what: "Review page: schema art, process done so far, field mapping, checks. Rewritten by the tools after every step"}
+  review:           {path: results_workspace/review, committed: false, what: "Last build summary and UI screenshots behind the review page"}
+  experience:       {path: results_workspace/experience, committed: false, what: "Past runs and reports the skill has learned from"}

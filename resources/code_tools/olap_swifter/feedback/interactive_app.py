@@ -17,7 +17,7 @@ def generate_interactive_html(
     validation_summary: Dict[str, Any],
     join_analysis: Dict[str, Any],
     deep_slices: List[Dict[str, Any]],
-    output_path: str = "scratch_workspace/review/model_reviewer.html",
+    output_path: str = "results_workspace/review/model_reviewer.html",
     table_options: Optional[List[str]] = None,
     schema_svg: str = "",
     process: Optional[List[Dict[str, Any]]] = None,

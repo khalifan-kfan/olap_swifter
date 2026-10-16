@@ -5,7 +5,8 @@ example lives here.
 
 If you want to understand *why* the model is built the way it is, read
 [SKILL.md](../../SKILL.md) instead. If you want the test definitions, read
-[TEST.md](../../TEST.md).
+[TEST.md](../../TEST.md). Terms such as crosswalk, grain, gate, patch and
+alias are defined in [TERMS.md](TERMS.md).
 
 ---
 
@@ -53,22 +54,40 @@ name; the code tools resolve their paths from it, so a move is one edit there.
 
 | Path | What it holds |
 | :--- | :--- |
-| `scratch_workspace/schemas/` | **The schema registry**, built from your datasets. One YAML file per schema (`<schema_id>.yaml`), edited in place, never versioned; `crosswalks/` beside them. Starts empty on a fresh clone. Git-ignored. |
+| `results_workspace/schemas/` | **The schema registry**, built from your datasets. One YAML file per schema (`<schema_id>.yaml`), edited in place, never versioned; `crosswalks/` beside them. Starts empty on a fresh clone. Git-ignored. |
 | `resources/config.yaml` | Match threshold (`new_schema_min_difference`, default 0.8) and EDA small-cell settings. |
-| `resources/templates/dataset_description.yaml` | The dataset description template: user sections, then the sections the skill fills. |
-| `scratch_workspace/inputs/<dataset>/` | **One folder per dataset:** `catalogue/`, `data/`, `eda/`, `codes/` (each may hold several files), `description/` (source documents such as a protocol or SOP; the skill reads them only for the template's answers) and `description.yaml`. Git-ignored. |
+| `resources/templates/dataset_concept.yaml` | The dataset concept template (what the dataset is): user sections, then the sections the skill fills. |
+| `results_workspace/inputs/<dataset>/` | **One folder per dataset:** `catalogue/`, `data/`, `eda/`, `codes/` (each may hold several files), `documents/` (source documents such as a protocol or SOP; the skill reads them only for the template's answers) and `dataset_concept.yaml`. Git-ignored. |
 | `resources/datasets/` | Sample CSVs used by the tests (opened only by the code tools). Git-ignored. |
 | `resources/code_tools/olap_swifter/schema/` | Registry, matcher, extender, loader (ETL), dummy data, checks, constellation view. |
 | `resources/code_tools/olap_swifter/` | The rest of the warehouse package (cube, profiler, reviewer, process log, CLI) and `tests/`. |
 | `resources/code_tools/ocr_tools/` | OCR, kept separate from the warehouse (see [OCR.md](OCR.md)). |
 | `resources/code_tools/privacy_tools/` | Presidio de-identification, used by OCR. |
-| `scratch_workspace/review/model_reviewer.html` | The review page. Rewritten after every tool step. Git-ignored. |
-| `scratch_workspace/` | **Everything a run writes.** Git-ignored. `INDEX.md` lists what is there. |
-| `scratch_workspace/warehouse/` | `warehouse.duckdb` (production) and `warehouse_dummy.duckdb` (dummy): the defaults for `etl`/`check`. |
-| `scratch_workspace/dummy/<schema>/` | Dummy CSV, catalogue and EDA from `synth`. |
-| `scratch_workspace/datasets/<dataset>/` | The dataset's own outputs: `constellation.md`, `patches/`, `tests/`, notes. |
-| `scratch_workspace/process_log.jsonl` | One line per tool step (counts only); feeds the review page. |
-| `scratch_workspace/experience/` | Past runs and their reports. |
+| `results_workspace/review/model_reviewer.html` | The review page. Rewritten after every tool step. Git-ignored. |
+| `results_workspace/` | **The results workspace: everything a run writes.** Outside the skill (see below). `README.md` is its key: the review page link, the folder structure, the decisions made per dataset, the files there now. |
+| `results_workspace/warehouse/` | `warehouse.duckdb` (production) and `warehouse_dummy.duckdb` (dummy): the defaults for `etl`/`check`. |
+| `results_workspace/dummy/<schema>/` | Dummy CSV, catalogue and EDA from `synth`. |
+| `results_workspace/datasets/<dataset>/` | The dataset's own outputs: `constellation.md`, `patches/`, `tests/`, notes. |
+| `results_workspace/process_log.jsonl` | One line per tool step (counts only); feeds the review page. |
+| `results_workspace/token_log.jsonl` | One line per `olap-swifter` command: the size of what it printed, in estimated tokens (characters / 4). Feeds the README's token weight. |
+| `results_workspace/experience/` | Past runs and their reports. |
+
+**Where the results workspace lives.** Paths above that start with
+`results_workspace/` are relative to the workspace, which sits outside the
+skill:
+
+1. `$OLAP_SWIFTER_WORKSPACE`, when set;
+2. else `results_workspace/` in the folder the tools are run from, when that
+   folder is not inside the skill (the usual case: the user's own project);
+3. else (run from inside this repo, or with `OLAP_SWIFTER_ROOT` set)
+   `results_workspace/` in the repo, git-ignored.
+
+```bash
+cd ~/my_project && /path/to/olap_swifter/.venv/bin/olap-swifter workspace --dataset hiv_site_b
+#   -> ~/my_project/results_workspace/ with README.md and inputs/hiv_site_b/{catalogue,data,eda,codes,documents}/
+olap-swifter workspace --zip      # -> results_workspace.zip beside it, for a chat download (raw data/ left out;
+                                  #    --include-data puts it in; the warehouses always go in)
+```
 
 `OLAP_SWIFTER_ROOT` points the tools at another copy of the repo;
 `OLAP_SWIFTER_SCHEMAS_DIR` at a different registry.
@@ -83,16 +102,40 @@ below prints a data row.
 
 `O=".venv/bin/olap-swifter"` in the examples. An HIV dataset is used as the example.
 
-**Step 1 — Collect the inputs.** The user puts the files in the dataset's
-inputs folder (`OLAP_SWIFTER_INPUTS_DIR` overrides `scratch_workspace/inputs/`):
+**Step 1 — Collect the inputs.** Make the workspace and the dataset's inputs
+folder first, and give the user its path (`$O workspace --dataset hiv_site_b`).
+The user puts the files there (`OLAP_SWIFTER_INPUTS_DIR` overrides
+`results_workspace/inputs/`):
 
 ```
-scratch_workspace/inputs/hiv_site_b/
+results_workspace/inputs/hiv_site_b/
     catalogue/             (required) one or more dictionaries: visits.csv, viral_loads.yaml …
     data/                  one or more exports: visits.csv, viral_loads.csv …
     eda/                   optional: one EDA per data file, made from data/ if absent
     codes/                 optional: one file per code list, e.g. regimens.csv, icd10.csv
+    documents/             optional: protocol, SOP, report (read only for the concept's answers)
+    dataset_concept.yaml   written by describe(...) below
 ```
+
+**EDA (Exploratory Data Analysis)**: a summary of each data file's shape
+without its rows: column types, missing values, ranges, category counts. It is
+how the skill models data it never reads. There are three ways to get one,
+and the tools check for it first:
+
+1. **The user gives one**: `eda/<data file stem>.yaml|.json|.csv`.
+2. **ydata-profiling, in one line**, from the dataset's inputs folder:
+
+   ```bash
+   python -c "import pandas as pd; from ydata_profiling import ProfileReport; ProfileReport(pd.read_csv('data/visits.csv'), minimal=True, samples=None).to_file('eda/visits.json')"
+   ```
+
+   Install it in its own environment (`pip install ydata-profiling`): as of
+   4.18 it needs pandas < 3, and this repo runs pandas 3. The tools read the
+   JSON report, keeping only aggregates (category counts only for
+   low-cardinality columns, small cells pooled). The report itself lists every
+   value of every column, so the agent never opens it.
+3. **Nothing**: `describe(...)` makes `eda/<file>.yaml` for every data file
+   that has none (aggregates only, small categories suppressed).
 
 An EDA is YAML (what the tools write by default) or a minimal CSV, one row per
 variable: `variable,type,rows,missing,missing_pct,distinct,min,max,mean,categories,suppressed_rows`
@@ -103,7 +146,7 @@ A dataset often arrives as several exports and dictionaries; put them all in.
 Dictionaries are merged by variable name, and a data file needs no matching
 dictionary file of the same name.
 
-Then the description is one line, with the four answers only the user can give:
+Then the dataset concept is one line, with the four answers only the user can give:
 
 ```bash
 .venv/bin/python -c "from olap_swifter import describe; describe('hiv_site_b', study='Adults on ART at four clinics, 2023-2025.', main_question='What share of patients are virally suppressed?', one_row_is='one viral load test', main_event='viral load test')"
@@ -112,7 +155,7 @@ Then the description is one line, with the four answers only the user can give:
 It reads every dictionary in `catalogue/`, makes `eda/<file>.yaml` for each data
 file that has none (aggregates only, small categories suppressed), lists every
 file in `codes/` with its entry count (never the codes), and writes
-`description.yaml`. It returns each data file's row and variable counts and its
+`dataset_concept.yaml` (the dataset concept). It returns each data file's row and variable counts and its
 source name, `<dataset>_<file>` (e.g. `hiv_site_b_viral_loads`).
 It prints the required answers still empty. Re-running it keeps what the skill
 has already filled in. Optional answers are flat keywords:
@@ -130,9 +173,9 @@ The CLI equivalent is `$O source describe hiv_site_b --study ... --main-question
 --one-row-is ... --main-event ... --json`. Paths outside the folder are refused.
 
 `visit`, `entities` and `relationship_to_existing` are not asked of the user:
-the skill writes them into `description.yaml` during Steps 2–3. `source match`
+the skill writes them into `dataset_concept.yaml` during Steps 2–3. `source match`
 lists them under `skill_to_fill`, and `attach` / `extend` / `register` refuse a
-description that still has `visit.identifier`, `relationship_to_existing.schema`
+dataset concept that still has `visit.identifier`, `relationship_to_existing.schema`
 or `relationship_to_existing.decision` empty.
 
 **Step 2 — Site vocabularies.** For a variable whose labels differ between
@@ -144,7 +187,7 @@ $O source values amu_inpatient_survey ward --by hospital_code --crosswalk ward_t
 ```
 
 It returns every label with its rows and the sites it appears at, and adds the
-labels not yet in `scratch_workspace/schemas/crosswalks/ward_type.yaml` with an empty
+labels not yet in `results_workspace/schemas/crosswalks/ward_type.yaml` with an empty
 `maps_to`. The agent fills each `maps_to` (see [§4](#crosswalk)); the load
 refuses while any label is unmapped and names the missing ones.
 
@@ -153,9 +196,9 @@ folders and every file in them is merged (each variable lists the data files it
 appears in):
 
 ```bash
-$O source match --catalogue scratch_workspace/inputs/hiv_site_b/catalogue \
-                --eda scratch_workspace/inputs/hiv_site_b/eda \
-                --description scratch_workspace/inputs/hiv_site_b/description.yaml --json
+$O source match --catalogue results_workspace/inputs/hiv_site_b/catalogue \
+                --eda results_workspace/inputs/hiv_site_b/eda \
+                --concept results_workspace/inputs/hiv_site_b/dataset_concept.yaml --json
 ```
 
 Read `recommendation` (`fit` / `extend` / `new_schema`), `best_schema`,
@@ -166,8 +209,8 @@ Read `recommendation` (`fit` / `extend` / `new_schema`), `best_schema`,
 
 ```bash
 $O schema extend hiv_patch.yaml --dataset hiv_site_b \
-    --catalogue scratch_workspace/inputs/hiv_site_b/catalogue --eda scratch_workspace/inputs/hiv_site_b/eda \
-    --description scratch_workspace/inputs/hiv_site_b/description.yaml --main-fact fact_viral_load --json
+    --catalogue results_workspace/inputs/hiv_site_b/catalogue --eda results_workspace/inputs/hiv_site_b/eda \
+    --concept results_workspace/inputs/hiv_site_b/dataset_concept.yaml --main-fact fact_viral_load --json
 ```
 
 **Step 4b — New schema** (write the full schema YAML, validate, register):
@@ -189,10 +232,10 @@ dataset's columns and the constellation tables it feeds.
 **Step 6 — Dummy data: ETL, build, test.**
 
 ```bash
-$O synth clinical_visit --json                     # capped dummy data -> scratch_workspace/dummy/clinical_visit/
-$O etl clinical_visit scratch_workspace/dummy/clinical_visit/clinical_visit_synthetic.csv \
-    --source clinical_visit_dummy --synthetic --json   # -> scratch_workspace/warehouse/warehouse_dummy.duckdb
-$O build --csv scratch_workspace/dummy/clinical_visit/clinical_visit_synthetic.csv \
+$O synth clinical_visit --json                     # capped dummy data -> results_workspace/dummy/clinical_visit/
+$O etl clinical_visit results_workspace/dummy/clinical_visit/clinical_visit_synthetic.csv \
+    --source clinical_visit_dummy --synthetic --json   # -> results_workspace/warehouse/warehouse_dummy.duckdb
+$O build --csv results_workspace/dummy/clinical_visit/clinical_visit_synthetic.csv \
     --schema clinical_visit --source clinical_visit_dummy --json                     # validation, joins, slices, reviewer
 ```
 
@@ -204,7 +247,7 @@ JSON results, never the dummy CSV.
 `etl` and `build --json` exit non-zero on any failed gate or check; `build --json`
 returns counts only (table counts, check totals, failed checks, join distances,
 slice depth). Then run the TEST.md sub-agents against
-`scratch_workspace/warehouse/warehouse_dummy.duckdb`, and record their result on
+`results_workspace/warehouse/warehouse_dummy.duckdb`, and record their result on
 the review page:
 
 ```bash
@@ -212,10 +255,10 @@ $O log dummy_tests --dataset hiv_site_b --passed 15 --total 15 --note "4 sub-age
 ```
 
 Fix and repeat until all pass. Test scripts and patches the agent writes go in
-`scratch_workspace/datasets/hiv_site_b/` (`scripts/`, `patches/`, `tests/`), never in the repo.
+`results_workspace/datasets/hiv_site_b/` (`scripts/`, `patches/`, `tests/`), never in the repo.
 
 **Ask the user for the production data** before going on: every export must be in
-`scratch_workspace/inputs/hiv_site_b/data/` and match the catalogue and EDA.
+`results_workspace/inputs/hiv_site_b/data/` and match the catalogue and EDA.
 
 **Step 7 — Production data: ETL, build, test, debug, repeat.**
 
@@ -224,9 +267,9 @@ order:
 
 ```bash
 for f in visits viral_loads; do
-  $O etl clinical_visit scratch_workspace/inputs/hiv_site_b/data/$f.csv --source hiv_site_b_$f --json
+  $O etl clinical_visit results_workspace/inputs/hiv_site_b/data/$f.csv --source hiv_site_b_$f --json
 done
-$O build --csv scratch_workspace/inputs/hiv_site_b/data/viral_loads.csv --schema clinical_visit \
+$O build --csv results_workspace/inputs/hiv_site_b/data/viral_loads.csv --schema clinical_visit \
     --source hiv_site_b_viral_loads --json
 $O check clinical_visit --source hiv_site_b_viral_loads --json
 $O log production_tests --dataset hiv_site_b --passed 15 --total 15
@@ -235,7 +278,7 @@ $O log production_tests --dataset hiv_site_b --passed 15 --total 15
 Every source of the dataset (`hiv_site_b` or `hiv_site_b_<file>`) uses the
 dataset's main fact for its coverage check.
 
-Then run the TEST.md sub-agents on `scratch_workspace/warehouse/warehouse.duckdb`
+Then run the TEST.md sub-agents on `results_workspace/warehouse/warehouse.duckdb`
 (aggregates only) and `log production_tests` their result.
 On a failure: a schema problem → patch with `schema extend`, rerun Step 6, then
 this step; a data problem → report the counts to the user and wait for their
@@ -248,11 +291,11 @@ user's agreement.
 **Step 8 — Report back when it is done:**
 
 ```bash
-$O constellation --highlight hiv_site_b     # -> scratch_workspace/datasets/hiv_site_b/constellation.md
+$O constellation --highlight hiv_site_b     # -> results_workspace/datasets/hiv_site_b/constellation.md
 $O review --dataset hiv_site_b              # re-render model_reviewer.html for this dataset
 ```
 
-The review page (`scratch_workspace/review/model_reviewer.html`) shows the schema art with the
+The review page (`results_workspace/review/model_reviewer.html`) shows the schema art with the
 dataset's tables filled, every workflow step done so far (✓ done, ✗ failed,
 ○ not yet) with its counts, and the last build's field mapping and checks.
 The table picker above the field mapping switches between all tables and a
@@ -269,7 +312,7 @@ issues with their counts.
 
 ## 4. File formats
 
-### Schema (`scratch_workspace/schemas/<schema_id>.yaml`)
+### Schema (`results_workspace/schemas/<schema_id>.yaml`)
 
 ```yaml
 schema_id: clinical_visit            # snake_case; the file name
@@ -347,7 +390,7 @@ ward_type:
 ```
 
 ```yaml
-# scratch_workspace/schemas/crosswalks/ward_type.yaml
+# results_workspace/schemas/crosswalks/ward_type.yaml
 name: ward_type
 entries:
   - {value: Pediatric, maps_to: Paediatric}           # case and spacing are ignored
@@ -389,8 +432,8 @@ variables = merge_profile_and_dictionary(load_eda("hiv_eda.yaml"), load_dictiona
 print(match_registry(variables, registry)["recommendation"])
 
 spec = registry.get("clinical_visit")
-dummy = write_synthetic_dataset(spec, "scratch_workspace/dummy/clinical_visit", n_visits=200)
-report = WarehouseLoader(duckdb.connect("scratch_workspace/warehouse/warehouse_dummy.duckdb")).load(
+dummy = write_synthetic_dataset(spec, "results_workspace/dummy/clinical_visit", n_visits=200)
+report = WarehouseLoader(duckdb.connect("results_workspace/warehouse/warehouse_dummy.duckdb")).load(
     spec, dummy["data"], "clinical_visit_dummy", is_synthetic=True)
 print(report["preflight"]["all_passed"], report["postload"]["all_passed"])
 ```
@@ -411,21 +454,22 @@ result = orch.run_full_pipeline()
 
 | Command | What it does |
 | :--- | :--- |
-| `source describe <name> --study --main-question --one-row-is --main-event` | `scratch_workspace/inputs/<name>/description.yaml` (+ EDA if missing). Same as `describe(...)`. |
+| `workspace [--dataset NAME] [--zip [--include-data]]` | Creates the results workspace (outside the skill) and its README, plus a dataset's inputs folder; prints the README and review-page paths to give the user. `--zip` packs it for download. |
+| `source describe <name> --study --main-question --one-row-is --main-event` | `results_workspace/inputs/<name>/dataset_concept.yaml` (the dataset concept; + EDA if missing). Same as `describe(...)`. |
 | `source eda <csv or folder> --out <yaml/csv or folder> [--csv]` | Aggregate-only EDA (small categories suppressed), one per CSV; `.csv`/`--csv` for the minimal CSV form. |
 | `source values <dataset> <variable> [--by SITE_VAR] [--crosswalk NAME]` | Distinct labels of a vocabulary variable with rows and sites; merges new labels into a crosswalk. |
-| `source match --catalogue C --eda E [--description D]` | Scores against every schema: `fit` / `extend` / `new_schema`. |
+| `source match --catalogue C --eda E [--concept D]` | Scores against every schema: `fit` / `extend` / `new_schema`. |
 | `schema list` / `schema show <id>` | Registered schemas. |
 | `schema validate <yaml>` | Checks a schema written by the agent, including reused-table conflicts. |
-| `schema register <yaml> --dataset --catalogue --eda [--description] [--main-fact]` | Adds a new schema and attaches its dataset. |
-| `schema extend <patch> --dataset --catalogue --eda [--description] [--main-fact]` | Additive change in place, then attach. |
-| `schema attach <id> --dataset --catalogue --eda [--description] [--main-fact]` | Attach a dataset that fits as-is. |
+| `schema register <yaml> --dataset --catalogue --eda [--concept] [--main-fact]` | Adds a new schema and attaches its dataset. |
+| `schema extend <patch> --dataset --catalogue --eda [--concept] [--main-fact]` | Additive change in place, then attach. |
+| `schema attach <id> --dataset --catalogue --eda [--concept] [--main-fact]` | Attach a dataset that fits as-is. |
 | `build [--csv C --schema S --source N] [--json]` | ETL + validation, join paths, slices, reviewer page. `--json`: counts only. |
-| `synth <id> [--out-dir] [--visits] [--max-rows]` | Dummy CSV + catalogue + EDA from a schema, capped at 400 rows (default: `scratch_workspace/dummy/<id>/`). |
+| `synth <id> [--out-dir] [--visits] [--max-rows]` | Dummy CSV + catalogue + EDA from a schema, capped at 400 rows (default: `results_workspace/dummy/<id>/`). |
 | `etl <id> <csv> --source S [--db DB] [--synthetic] [--force]` | Stage → gates → load → checks. Counts only. DB defaults to the workspace warehouse (dummy one with `--synthetic`). |
 | `check <id> --source S [--db DB] [--synthetic]` | Re-run all gates and checks for a loaded source. |
 | `constellation [--highlight DATASET] [--out md]` | The one warehouse view, a dataset highlighted (written to the dataset's workspace folder). |
-| `log <stage> --dataset D [--passed N --total M] [--failed] [--note]` | Record a step the tools cannot see (TEST.md results) on the review page. |
+| `log <stage> --dataset D [--passed N --total M] [--failed] [--note] [--tokens N]` | Record a step the tools cannot see (TEST.md results) on the review page. `--tokens` records the agent's own token use as the host reports it; the README shows the latest. |
 | `profile [--schema]` | Join paths, deepest cube slices, latency. |
 | `review [--dataset]` / `verify-ui` | Re-render the review page / Playwright check of it. |
 | `ocr <image>` | OCR + de-identification (see [OCR.md](OCR.md); kept separate from the warehouse for now). |
