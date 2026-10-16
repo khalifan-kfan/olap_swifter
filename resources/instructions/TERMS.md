@@ -53,7 +53,15 @@ user, and explain one the first time it comes up.
   shape of the whole warehouse (SKILL.md, Section 2).
 - **Data mart** — a self-contained set of tables for a dataset that shares too
   little with the constellation to join it.
-- **Fan-out** — rows multiplied by a join, which inflates totals.
+- **Fan-out** — rows multiplied by a join, which inflates totals. It happens
+  when one row is matched to several rows in another table, so the first row
+  is repeated once per match. Example: a visit with one weight (70 kg) and
+  three lab tests. Joining visits to lab tests gives three rows, each carrying
+  70 kg, so a sum of weights says 210 kg and a count of visits says 3. Flat
+  exports have the same problem built in: visit-level values are repeated on
+  every row of the visit. The fix is to give every fact a **grain**, take each
+  measure from its own table at that grain, and join facts through the visit
+  spine rather than to each other.
 
 **Schemas and how they change**
 
