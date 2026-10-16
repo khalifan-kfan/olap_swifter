@@ -4,6 +4,7 @@ its tables with row counts, and the first rows of a chosen table.
 Read-only, served on localhost only. Standard library + duckdb, nothing else.
 """
 
+import errno
 import html
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -123,8 +124,20 @@ def serve(extra: Optional[List[Path]] = None, port: int = 8765, limit: int = 200
         def log_message(self, *args):
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    print(f"DuckDB viewer on http://127.0.0.1:{port}  (Ctrl+C to stop)")
+    server = None
+    for p in range(port, port + 20):  # the asked port may be held by another viewer
+        try:
+            server = ThreadingHTTPServer(("127.0.0.1", p), Handler)
+            break
+        except OSError as e:
+            if e.errno != errno.EADDRINUSE:
+                raise
+    if server is None:
+        raise SystemExit(f"ports {port}-{port + 19} are all in use; pick another with --port")
+    p = server.server_address[1]
+    if p != port:
+        print(f"port {port} is in use (another viewer still running?); using {p}", flush=True)
+    print(f"DuckDB viewer on http://127.0.0.1:{p}  (Ctrl+C to stop)", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
