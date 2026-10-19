@@ -81,7 +81,8 @@ class OfflinePresidioAnonymizer:
         # 3. Patient Name Context Pattern (e.g., Patient Name: John Kato, Patient's Last Name: Nakato, First Name: Sarah)
         name_pattern = Pattern(
             name="patient_name_context",
-            regex=r"(?i:(?:patient(?:'s)?(?:\s+(?:full|last|first)?\s*name)?|pt(?:\s+name)?|client(?:\s+name)?|first\s+name|last\s+name|next\s+of\s+kin|nok))\s*[:=-]\s*([A-Za-z'-]{2,20})",
+            # Lookbehind keeps the label; the whole name is masked, not only its first word.
+            regex=r"(?<=(?i:(?:patient(?:'s)?(?:\s+(?:full|last|first)?\s*name)?|pt(?:\s+name)?|client(?:\s+name)?|first\s+name|last\s+name|next\s+of\s+kin|nok))\s*[:=-]\s*)[A-Za-z'-]{2,20}(?:[ \t]+[A-Za-z'-]{2,20}(?![A-Za-z'-]*\s*:)){0,3}",
             score=0.85
         )
         name_recognizer = PatternRecognizer(supported_entity="PERSON", patterns=[name_pattern])
@@ -90,7 +91,7 @@ class OfflinePresidioAnonymizer:
         # 4. Clinician & Signature Context Pattern at bottom of clinical notes (e.g. Clinician: Dr. K. Muwonge, Signed: KM)
         clinician_pattern = Pattern(
             name="clinician_staff_context",
-            regex=r"(?i:(?:clinician|doctor|dr\.|physician|nurse|medical\s+officer|officer|prescriber|examiner|attended\s+by|examined\s+by|signed|signature))\s*[:=-]\s*([A-Za-z.'-\s]{2,30})",
+            regex=r"(?<=(?i:(?:clinician|doctor|dr\.|physician|nurse|medical\s+officer|officer|prescriber|examiner|attended\s+by|examined\s+by|signed|signature))\s*[:=-]\s*)[A-Za-z.'-]+(?:[ \t]+[A-Za-z.'-]+(?![A-Za-z.'-]*\s*:)){0,3}",
             score=0.85
         )
         clinician_recognizer = PatternRecognizer(supported_entity="PERSON", patterns=[clinician_pattern])
@@ -99,7 +100,7 @@ class OfflinePresidioAnonymizer:
         # 5. Localized Ugandan Contact / Phone Pattern (e.g. +256 701 449 283, 0772 123 456, Phone: ...)
         phone_pattern = Pattern(
             name="ugandan_phone_pattern",
-            regex=r"(?i:(?:phone|tel|mobile|contact|cell)?\s*[:=-]?\s*)?(?:\+?256[-.\s]?|0)[37]\d{2}[-.\s]?\d{3}[-.\s]?\d{3}",
+            regex=r"(?:\+?256[-.\s]?|\b0)[37]\d{2}[-.\s]?\d{3}[-.\s]?\d{3}\b",  # number only: the label stays
             score=0.9
         )
         phone_recognizer = PatternRecognizer(supported_entity="PHONE_NUMBER", patterns=[phone_pattern])
@@ -176,7 +177,7 @@ class OfflinePresidioAnonymizer:
 
         # 1. Patient Names with contextual labels
         name_ctx_pattern = re.compile(
-            r"((?:patient(?:'s)?(?:\s+(?:full|last|first)?\s*name)?|pt(?:\s+name)?|client(?:\s+name)?|first\s+name|last\s+name|next\s+of\s+kin|nok)\s*[:=-]\s*)([A-Za-z'-]{2,20})",
+            r"((?:patient(?:'s)?(?:\s+(?:full|last|first)?\s*name)?|pt(?:\s+name)?|client(?:\s+name)?|first\s+name|last\s+name|next\s+of\s+kin|nok)\s*[:=-]\s*)([A-Za-z'-]{2,20}(?:[ \t]+[A-Za-z'-]{2,20}(?![A-Za-z'-]*\s*:)){0,3})",
             re.IGNORECASE | re.MULTILINE
         )
         def replace_name(match):
@@ -191,7 +192,7 @@ class OfflinePresidioAnonymizer:
 
         # 2. Clinician & Staff Signatures at bottom of notes
         staff_ctx_pattern = re.compile(
-            r"((?:clinician|doctor|dr\.|physician|nurse|medical\s+officer|officer|prescriber|examiner|attended\s+by|examined\s+by|signed|signature)\s*[:=-]\s*)([A-Za-z.'-\s]{2,30})",
+            r"((?:clinician|doctor|dr\.|physician|nurse|medical\s+officer|officer|prescriber|examiner|attended\s+by|examined\s+by|signed|signature)\s*[:=-]\s*)([A-Za-z.'\s-]{2,30})",
             re.IGNORECASE | re.MULTILINE
         )
         def replace_staff(match):
