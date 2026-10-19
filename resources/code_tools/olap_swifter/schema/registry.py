@@ -62,6 +62,16 @@ class SchemaRegistry:
             return {}
         return {p.stem: p for p in sorted(self.dir.glob("*.yaml")) if p.name != "config.yaml"}
 
+    def default_id(self, schema_id: Optional[str] = None) -> str:
+        """`schema_id` when given, else the only registered schema; an error naming the choices otherwise."""
+        if schema_id:
+            return schema_id
+        ids = sorted(self.ids())
+        if len(ids) == 1:
+            return ids[0]
+        raise KeyError("no schema registered yet: model one first (SKILL.md, Step 4)" if not ids
+                       else f"several schemas are registered ({', '.join(ids)}); name one with --schema")
+
     def ids(self) -> List[str]:
         return sorted(self._paths())
 

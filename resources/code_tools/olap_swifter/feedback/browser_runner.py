@@ -2,6 +2,7 @@
 Playwright Automated Browser Evaluator and Field-Switching Feedback Runner.
 Validates the interactive model reviewer UI, tests field-switching interactions,
 and captures visual verification snapshots.
+TODO: Can be used to improve user, review processes mid process
 """
 
 import asyncio

@@ -165,6 +165,8 @@ def attach_dataset(spec: SchemaSpec, dataset: str, variables: List[Dict[str, Any
             src = by_name[c.crosswalk["from"]]
             if (src.table, src.name) in tagged:
                 tagged.add((c.table, c.name))
+        if c.from_key and (c.table, c.from_key) in tagged:  # a kept code is fed by whoever feeds its key
+            tagged.add((c.table, c.name))
     for table, cname in tagged:
         col = spec.tables[table].columns[cname]
         if ds not in col.datasets:
@@ -178,12 +180,46 @@ def attach_dataset(spec: SchemaSpec, dataset: str, variables: List[Dict[str, Any
     return {"dataset": ds, "columns": sorted(f"{t}.{c}" for t, c in tagged)}
 
 
-def extend_schema(patch_path: str, registry: Optional[SchemaRegistry] = None) -> SchemaSpec:
-    """Applies a patch file to its base schema and writes the schema file in place."""
+PLACEMENTS = ("extend", "own_mart", "ask_me")
+
+
+def placement_of(concept_path: Optional[str]) -> str:
+    """The user's answer to `placement` in the dataset concept ('' when there is none)."""
+    if not concept_path or not Path(concept_path).exists():
+        return ""
+    data = yaml.safe_load(Path(concept_path).read_text(encoding="utf-8")) or {}
+    return str(data.get("placement") or "").strip().lower()
+
+
+def require_user_placement(concept_path: Optional[str], schema_id: str, action: str) -> None:
+    """
+    Folding a dataset into an existing schema is the user's decision, never the
+    agent's: refuse unless the dataset concept records `placement: extend`.
+    """
+    choice = placement_of(concept_path)
+    if choice == "extend":
+        return
+    told = {"own_mart": "the user chose its own data mart (placement: own_mart)",
+            "ask_me": "the user asked to be asked (placement: ask_me) and has not answered yet",
+            "": "the user has not chosen (no placement in the dataset concept)"}
+    raise SchemaSpecError(
+        f"cannot {action} '{schema_id}': {told.get(choice, f'placement is {choice!r}')}. Whether a dataset "
+        f"extends an existing schema or becomes its own data mart is the user's decision: show them the match "
+        f"result, ask 'extend {schema_id}, or its own data mart?', and record the answer as `placement: extend` "
+        "or `placement: own_mart` in the dataset concept (pass it with --concept).")
+
+
+def extend_schema(patch_path: str, registry: Optional[SchemaRegistry] = None,
+                  concept: Optional[str] = None) -> SchemaSpec:
+    """
+    Applies a patch file to its base schema and writes the schema file in place.
+    Refused unless the dataset concept records the user's `placement: extend`.
+    """
     registry = registry or SchemaRegistry()
     patch = yaml.safe_load(Path(patch_path).read_text(encoding="utf-8")) or {}
     if "base" not in patch:
         raise SchemaSpecError("patch needs 'base' (the schema to extend)")
+    require_user_placement(concept, str(patch["base"]), "extend")
     new_spec = apply_patch(registry.get(str(patch["base"])), patch, registry)
     conflicts = registry.table_conflicts(new_spec)
     if conflicts:

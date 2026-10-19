@@ -5,7 +5,9 @@ constellation view. Runs on a temporary copy of tests/fixtures/schemas.
 """
 
 import csv
+import json
 import random
+import re
 import shutil
 from pathlib import Path
 
@@ -27,9 +29,8 @@ RESOURCES = Path(__file__).resolve().parents[3]
 DATASETS = RESOURCES / "datasets"
 
 HIV_PATCH = {
-    "base": "clinical_visit",
+    "base": "amr_surveillance",
     "reason": "HIV ART monitoring",
-    "add_aliases": {"dim_patient.gender": ["sex"]},
     "add_tables": {
         "dim_regimen": {"kind": "dimension", "key": "regimen_code", "synthetic": {"rows": 4}, "columns": {
             "regimen_code": {"type": "VARCHAR", "role": "key", "required": True},
@@ -48,6 +49,31 @@ def registry(tmp_path):
     d = tmp_path / "schemas"
     shutil.copytree(SEED_DIR, d)
     return SchemaRegistry(d)
+
+
+WARD_TYPE = {"name": "ward_type", "from_variable": "admission_ward", "entries": [
+    {"value": v, "maps_to": m} for v, m in [
+        ("Medical", "Medical"), ("Medical Ward", "Medical"), ("Surgical", "Surgical"), ("Surgical Ward", "Surgical"),
+        ("Paediatric", "Paediatric"), ("Pediatric", "Paediatric"), ("Paediatric Ward", "Paediatric"),
+        ("Pediatric Ward", "Paediatric"), ("Children's Ward", "Paediatric"), ("Maternity", "Maternity"),
+        ("Labour Ward", "Maternity"), ("ICU", "ICU"), ("Intensive Care Unit", "ICU"), ("Emergency", "Emergency"),
+        ("Casualty", "Emergency"), ("OPD", "Outpatient")]]}
+
+
+@pytest.fixture
+def ward_registry(registry):
+    """AMR extended with a standard ward type, mapped from the site's ward label through a crosswalk."""
+    from olap_swifter.schema.vocabulary import crosswalk_path
+    xw = crosswalk_path(registry.dir, "ward_type")
+    xw.parent.mkdir(parents=True, exist_ok=True)
+    xw.write_text(yaml.safe_dump(WARD_TYPE))
+    spec = apply_patch(registry.get("amr_surveillance"), {"reason": "standard ward type", "add_columns": {
+        "dim_visit": {"ward_type": {
+            "type": "VARCHAR", "role": "attribute",
+            "allowed": ["Medical", "Surgical", "Paediatric", "Maternity", "ICU", "Emergency", "Outpatient", "Other"],
+            "crosswalk": {"file": "ward_type", "from": "admission_ward", "scope": "facility_id"}}}}}, registry)
+    registry.save(spec)
+    return registry
 
 
 @pytest.fixture
@@ -80,17 +106,16 @@ def _variables(files):
     return merge_profile_and_dictionary(load_eda(files["eda"]), load_dictionary(files["catalogue"]))
 
 
-def test_seed_schemas_are_valid_and_reuse_tables(registry):
-    assert set(registry.ids()) == {"amr_surveillance", "clinical_visit"}
+def test_seed_schema_is_valid(registry):
+    assert set(registry.ids()) == {"amr_surveillance"}
     for spec in registry.all():
         assert registry.table_conflicts(spec) == []
     owners = registry.table_owners()
-    assert sorted(owners["dim_visit"]) == ["amr_surveillance", "clinical_visit"]
-    assert owners["fact_ast_results"] == ["amr_surveillance"]
+    assert owners["dim_visit"] == ["amr_surveillance"] and owners["fact_ast_results"] == ["amr_surveillance"]
 
 
-@pytest.mark.parametrize("schema_id", ["clinical_visit", "amr_surveillance"])
-def test_dummy_data_passes_every_check(registry, tmp_path, schema_id):
+def test_dummy_data_passes_every_check(registry, tmp_path):
+    schema_id = "amr_surveillance"
     spec = registry.get(schema_id)
     out = write_synthetic_dataset(spec, str(tmp_path / "dummy"), n_visits=80)
     for key in ("data", "catalogue", "eda"):
@@ -102,38 +127,52 @@ def test_dummy_data_passes_every_check(registry, tmp_path, schema_id):
 
 
 def test_schemas_share_one_constellation(registry, tmp_path):
+    """A second schema reusing AMR's visit, patient and facility tables only adds its own tables."""
+    amr = registry.get("amr_surveillance").to_yaml_dict()
+    hiv = {"schema_id": "hiv_care", "title": "HIV care", "spine": amr["spine"], "main_fact": "fact_viral_load",
+           "tables": {**{t: amr["tables"][t] for t in ("dim_patient", "dim_facility", "dim_visit")},
+                      **HIV_PATCH["add_tables"]}}
+    path = tmp_path / "hiv_care.yaml"
+    path.write_text(yaml.safe_dump(hiv))
+    registry.register(path)
     conn = duckdb.connect()
     loader = WarehouseLoader(conn)
-    for sid in ("clinical_visit", "amr_surveillance"):
+    for sid in ("amr_surveillance", "hiv_care"):
         out = write_synthetic_dataset(registry.get(sid), str(tmp_path / sid), n_visits=50)
         report = loader.load(registry.get(sid), out["data"], f"{sid}_dummy", is_synthetic=True)
-        assert report["loaded"]
-    # The second schema only created its own tables; shared ones were reused.
-    assert set(report["ddl_changes"]) == {"dim_organism", "dim_antibiotic", "fact_ast_results"}
+        assert report["loaded"] and report["postload"]["all_passed"], report["postload"]["failures"]
+    assert set(report["ddl_changes"]) == {"dim_regimen", "fact_viral_load"}  # shared tables reused
     sources = conn.execute("SELECT source_id, schema_id FROM dim_data_source ORDER BY 1").fetchall()
-    assert sources == [("amr_surveillance_dummy", "amr_surveillance"), ("clinical_visit_dummy", "clinical_visit")]
+    assert sources == [("amr_surveillance_dummy", "amr_surveillance"), ("hiv_care_dummy", "hiv_care")]
 
 
 def test_hiv_dataset_extends_then_fits(registry, hiv_files, tmp_path):
     variables = _variables(hiv_files)
     before = match_registry(variables, registry)
     assert before["recommendation"] == "extend"  # shares spine/patient/facility, < 80% different
-    assert before["tied_with"] == ["clinical_visit"] or before["best_schema"] == "clinical_visit"
+    assert before["best_schema"] == "amr_surveillance"
 
     patch = tmp_path / "patch.yaml"
     patch.write_text(yaml.safe_dump(HIV_PATCH))
-    spec = extend_schema(str(patch), registry)
+    # Extending an existing schema is the user's decision: refused until the concept records it.
+    concept = tmp_path / "dataset_concept.yaml"
+    for choice in (None, "own_mart", "ask_me"):
+        concept.write_text(yaml.safe_dump({"placement": choice} if choice else {}))
+        with pytest.raises(SchemaSpecError, match="user"):
+            extend_schema(str(patch), registry, concept=str(concept))
+    concept.write_text(yaml.safe_dump({"placement": "extend"}))
+    spec = extend_schema(str(patch), registry, concept=str(concept))
     tagged = attach_dataset(spec, "hiv_site_b", variables, hiv_files["catalogue"], hiv_files["eda"],
                             main_fact="fact_viral_load")
     registry.save(spec)
     assert "fact_viral_load.viral_load_copies" in tagged["columns"]
-    assert list(registry.dir.glob("clinical_visit*.yaml")) == [registry.dir / "clinical_visit.yaml"]  # no versions
+    assert list(registry.dir.glob("amr_surveillance*.yaml")) == [registry.dir / "amr_surveillance.yaml"]  # no versions
 
     after = match_registry(variables, registry)
-    assert after["recommendation"] == "fit" and after["best_schema"] == "clinical_visit"
+    assert after["recommendation"] == "fit" and after["best_schema"] == "amr_surveillance"
 
     conn = duckdb.connect()
-    report = WarehouseLoader(conn).load(registry.get("clinical_visit"), hiv_files["data"], "hiv_site_b")
+    report = WarehouseLoader(conn).load(registry.get("amr_surveillance"), hiv_files["data"], "hiv_site_b")
     assert report["loaded"] and report["postload"]["all_passed"], report["postload"]["failures"]
     coverage = [r for r in report["postload"]["results"] if r["check"] == "spine_coverage"][0]
     assert coverage["target"].startswith("fact_viral_load") and coverage["actual"] == 100.0
@@ -145,7 +184,7 @@ def test_hiv_dataset_extends_then_fits(registry, hiv_files, tmp_path):
 
 
 def test_patches_are_additive_only(registry):
-    spec = registry.get("clinical_visit")
+    spec = registry.get("amr_surveillance")
     with pytest.raises(SchemaSpecError, match="already exists"):
         apply_patch(spec, {"reason": "x", "add_columns": {"dim_patient": {"gender": {"type": "BIGINT"}}}})
     with pytest.raises(SchemaSpecError, match="additive only"):
@@ -155,7 +194,7 @@ def test_patches_are_additive_only(registry):
 
 
 def test_new_schema_reusing_a_table_must_agree(registry, tmp_path):
-    clash = registry.get("clinical_visit").to_yaml_dict()
+    clash = registry.get("amr_surveillance").to_yaml_dict()
     clash["schema_id"] = "clash"
     clash["tables"]["dim_patient"]["columns"]["gender"]["type"] = "BIGINT"
     clash["tables"]["dim_patient"]["columns"]["gender"].pop("allowed")
@@ -174,13 +213,61 @@ def test_spec_validation_catches_structural_errors():
         parse_spec(base)
 
 
-def test_gate_blocks_conflicting_entity_attributes(registry):
-    """The AMR sample assigns patients different genders across rows; it must not load silently."""
+def test_conflicting_entity_attributes_load_as_a_data_issue(registry):
+    """
+    The AMR sample assigns patients different genders across rows. That is a
+    source problem, not a transfer one: the source loads in full and the
+    conflict is reported as a data issue for cleaning, never silently.
+    """
     report = WarehouseLoader(duckdb.connect()).load(
         registry.get("amr_surveillance"), str(DATASETS / "sample_amr_clinical.csv"), "sample_amr")
-    assert report["loaded"] is False
-    failed = {(f["check"], f["target"]) for f in report["preflight"]["failures"]}
-    assert ("entity_consistency", "dim_patient") in failed
+    assert report["loaded"] and report["preflight"]["all_passed"] and report["postload"]["all_passed"]
+    issues = {(i["check"], i["target"]) for i in report["preflight"]["data_issues"]}
+    assert ("entity_consistency", "dim_patient") in issues
+    assert report["data_issues"]["count"] == len(report["preflight"]["data_issues"])
+
+
+def test_data_issues_are_recorded_for_the_readme(registry, tmp_path):
+    """A load into a warehouse file writes its data issues (counts only) for the results README."""
+    conn = duckdb.connect(str(tmp_path / "warehouse.duckdb"))
+    report = WarehouseLoader(conn).load(
+        registry.get("amr_surveillance"), str(DATASETS / "sample_amr_clinical.csv"), "sample_amr")
+    rec = json.loads(Path(report["data_issues"]["file"]).read_text())
+    assert rec["issues"] and all(set(i) == {"check", "target", "actual", "detail"} for i in rec["issues"])
+    assert (tmp_path / "warehouse_staging.duckdb").exists()
+
+
+def test_warehouse_keys_are_generated_not_extracted(registry):
+    """No source identifier reaches the warehouse: every dimension key is generated, mapped in staging."""
+    conn = duckdb.connect()
+    spec = registry.get("amr_surveillance")
+    WarehouseLoader(conn).load(spec, str(DATASETS / "sample_amr_clinical.csv"), "sample_amr")
+    for dim in spec.dimensions:
+        keys = {r[0] for r in conn.execute(f'SELECT "{dim.key}" FROM "{dim.name}"').fetchall()}
+        natural = {r[0] for r in conn.execute(
+            "SELECT natural_key FROM stg._keymap WHERE dimension = ?", [dim.name]).fetchall()}
+        assert keys and not keys & natural, dim.name
+        assert all(re.fullmatch(r"[A-Z0-9]{3}-\d{6}", k) for k in keys), dim.name
+    tables = {r[0] for r in conn.execute("SELECT table_name FROM information_schema.tables "
+                                         "WHERE table_catalog = current_database()").fetchall()}
+    assert not any(t.startswith("stg_") for t in tables)  # raw rows live only in the staging database
+
+
+def test_blank_or_unparseable_inputs_are_caught(registry, tmp_path):
+    """A blank part of a derived key, or a derived value that cannot be computed, never loads silently."""
+    spec = registry.get("amr_surveillance")
+    dummy = write_synthetic_dataset(spec, str(tmp_path / "d"), n_visits=20)
+    import csv as _csv
+    rows = list(_csv.DictReader(open(dummy["data"])))
+    rows[0][spec.key_column(spec.spine_table).name] = "   "
+    bad = tmp_path / "bad.csv"
+    with open(bad, "w", newline="") as fh:
+        w = _csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    report = WarehouseLoader(duckdb.connect()).load(spec, str(bad), "bad", is_synthetic=True)
+    failed = {f["check"] for f in report["preflight"]["failures"]}
+    assert "spine_key_nulls" in failed and report["loaded"] is False
 
 
 def test_eda_suppresses_small_categories(tmp_path):
@@ -193,7 +280,7 @@ def test_eda_suppresses_small_categories(tmp_path):
 
 
 def test_dummy_data_is_capped_at_whole_visits(registry, tmp_path):
-    spec = registry.get("clinical_visit")
+    spec = registry.get("amr_surveillance")
     out = write_synthetic_dataset(spec, str(tmp_path / "dummy"), n_visits=5000)
     assert out["capped"] and out["rows"] <= 400 == out["max_rows"]
     with open(out["data"]) as fh:
@@ -252,7 +339,8 @@ def test_describe_from_inputs_folder(registry, hiv_files, tmp_path):
     desc_path = folder / "dataset_concept.yaml"
     doc = yaml.safe_load(desc_path.read_text())
     doc["visit"]["identifier"] = "visit_id"
-    doc["relationship_to_existing"].update({"schema": "clinical_visit", "decision": "extend"})
+    doc["relationship_to_existing"].update({"schema": "amr_surveillance", "decision": "extend"})
+    doc["placement"] = "extend"  # the user's answer: fold it into the existing schema
     desc_path.write_text(yaml.safe_dump(doc))
     again = describe("hiv_site_b", inputs_dir=str(inputs), quiet=True)
     assert again["skill_to_fill"] == [] and again["eda_generated"] == 0 and len(again["code_lists"]) == 2
@@ -262,14 +350,14 @@ def test_describe_from_inputs_folder(registry, hiv_files, tmp_path):
     # Each data file loads as its own source of the one dataset.
     patch = tmp_path / "patch.yaml"
     patch.write_text(yaml.safe_dump(HIV_PATCH))
-    spec = extend_schema(str(patch), registry)
+    spec = extend_schema(str(patch), registry, concept=str(desc_path))
     attach_dataset(spec, "hiv_site_b", variables, out["catalogue"], out["eda"], main_fact="fact_viral_load")
     registry.save(spec)
     loader = WarehouseLoader(duckdb.connect())
     for source, f in zip(out["sources"], out["data_files"]):
-        report = loader.load(registry.get("clinical_visit"), str(folder / f["data"]), source)
+        report = loader.load(registry.get("amr_surveillance"), str(folder / f["data"]), source)
         assert report["loaded"] and report["postload"]["all_passed"], (source, report["postload"]["failures"])
-    assert registry.get("clinical_visit").dataset_for_source("hiv_site_b_viral_loads")["main_fact"] == \
+    assert registry.get("amr_surveillance").dataset_for_source("hiv_site_b_viral_loads")["main_fact"] == \
         "fact_viral_load"
 
     with pytest.raises(TypeError, match="unknown description field"):
@@ -292,7 +380,8 @@ def test_minimal_csv_eda_round_trips(hiv_files, tmp_path):
     assert load_eda(str(tmp_path / "eda"))["variables"]  # a folder of CSV EDAs reads too
 
 
-def test_ward_crosswalk_keeps_raw_label_and_maps_standard_type(registry, tmp_path):
+def test_ward_crosswalk_keeps_raw_label_and_maps_standard_type(ward_registry, tmp_path):
+    registry = ward_registry
     from olap_swifter.schema.vocabulary import VocabularyError, crosswalk_path, label_counts, merge_crosswalk
 
     data = tmp_path / "wards.csv"
@@ -308,7 +397,7 @@ def test_ward_crosswalk_keeps_raw_label_and_maps_standard_type(registry, tmp_pat
                        {"value": "Ward 4B", "scope": "F01", "maps_to": "Medical"}]
     xw.write_text(yaml.safe_dump(doc))
 
-    report = WarehouseLoader(duckdb.connect()).load(registry.get("clinical_visit"), str(data), "wards")
+    report = WarehouseLoader(duckdb.connect()).load(registry.get("amr_surveillance"), str(data), "wards")
     assert report["loaded"] is False
     gate = [r for r in report["preflight"]["results"] if r["check"] == "crosswalk_coverage"][0]
     assert gate["actual"] == 3 and gate["unmapped"] == [{"value": "Burns Unit", "scope": "F02", "rows": 3}]
@@ -325,10 +414,12 @@ def test_ward_crosswalk_keeps_raw_label_and_maps_standard_type(registry, tmp_pat
     xw.write_text(yaml.safe_dump(doc))
 
     conn = duckdb.connect()
-    report = WarehouseLoader(conn).load(registry.get("clinical_visit"), str(data), "wards")
+    report = WarehouseLoader(conn).load(registry.get("amr_surveillance"), str(data), "wards")
     assert report["loaded"] and report["postload"]["all_passed"], report["postload"]["failures"]
-    got = dict(conn.execute("""SELECT f.facility_id || '|' || TRIM(v.admission_ward), v.ward_type
-        FROM dim_visit v JOIN dim_facility f USING (facility_id)""").fetchall())
+    # The warehouse holds generated facility keys; the source codes are only in the private key map.
+    got = dict(conn.execute("""SELECT m.natural_key || '|' || TRIM(v.admission_ward), v.ward_type
+        FROM dim_visit v JOIN stg._keymap m ON m.dimension = 'dim_facility' AND m.surrogate_key = v.facility_id
+        """).fetchall())
     assert got["F01|Pediatric Ward"] == got["F01|paediatric   WARD"] == "Paediatric"  # raw label kept as recorded
     assert got["F02|Ward 4B"] == "Surgical" and got["F01|Ward 4B"] == "Medical"
     assert got["F02|Burns Unit"] == "Surgical" and got["F03|ICU"] == "ICU"
@@ -344,4 +435,26 @@ def test_ward_crosswalk_keeps_raw_label_and_maps_standard_type(registry, tmp_pat
     doc["entries"].append({"value": "Theatre", "maps_to": "Operating"})
     xw.write_text(yaml.safe_dump(doc))
     with pytest.raises(SchemaSpecError, match="not an allowed value"):
-        registry.get("clinical_visit")
+        registry.get("amr_surveillance")
+
+
+def test_keep_as_keeps_a_meaningful_code_beside_its_generated_key(registry, tmp_path):
+    """A code that means something keeps its source value as an attribute; a person identifier never can."""
+    raw = yaml.safe_load((registry.dir / "amr_surveillance.yaml").read_text())
+    patient_dims = [t for t, d in raw["tables"].items() if d.get("kind") == "dimension" and t != raw["spine"]["table"]]
+    dim = next(t for t in patient_dims if not raw["tables"][t]["columns"][raw["tables"][t]["key"]].get("pii"))
+    key = raw["tables"][dim]["key"]
+    raw["tables"][dim]["columns"][key]["keep_as"] = f"{key}_code"
+    spec = parse_spec(raw)
+    assert spec.tables[dim].columns[f"{key}_code"].from_key == key
+    assert f"{key}_code" not in spec.to_yaml_dict()["tables"][dim]["columns"]  # implied, never written back
+    conn = duckdb.connect()
+    report = WarehouseLoader(conn).load(spec, str(DATASETS / "sample_amr_clinical.csv"), "sample_amr")
+    assert report["postload"]["all_passed"], report["postload"]["failures"]
+    same = conn.execute(f"""SELECT COUNT(*) FROM "{dim}" d JOIN stg._keymap m
+        ON m.dimension = '{dim}' AND m.surrogate_key = d."{key}" WHERE m.natural_key = d."{key}_code" """).fetchone()[0]
+    assert same == conn.execute(f'SELECT COUNT(*) FROM "{dim}"').fetchone()[0] > 0
+
+    raw["tables"][dim]["columns"][key]["pii"] = True
+    with pytest.raises(SchemaSpecError, match="never kept"):
+        parse_spec(raw)

@@ -45,7 +45,7 @@ class MedicalOLAPOrchestrator:
         num_visits = self.conn.execute(
             f'SELECT COUNT(DISTINCT "{spine.key}") FROM "{spine.name}" WHERE _source_id = ?', [self.source_id]
         ).fetchone()[0]
-        raw_rows = self.conn.execute(f'SELECT COUNT(*) FROM "{report["staging_table"]}"').fetchone()[0]
+        raw_rows = self.conn.execute(f'SELECT COUNT(*) FROM {report["staging_table"]}').fetchone()[0]
         return {
             "schema": spec.schema_id,
             "source_id": self.source_id,
@@ -54,8 +54,9 @@ class MedicalOLAPOrchestrator:
             "table_counts": self.store.get_table_counts(),
         }
 
-    def ingest_synthetic_dataset(self, num_visits: int = 500, schema_id: str = DEFAULT_SCHEMA) -> Dict[str, Any]:
+    def ingest_synthetic_dataset(self, num_visits: int = 500, schema_id: Optional[str] = DEFAULT_SCHEMA) -> Dict[str, Any]:
         """Generates dummy data for a registered schema and loads it."""
+        schema_id = self.store.registry.default_id(schema_id)
         report = self.store.populate_synthetic_data(num_visits=num_visits, schema_id=schema_id)
         return self._after_load(self.store.registry.get(schema_id), report)
 

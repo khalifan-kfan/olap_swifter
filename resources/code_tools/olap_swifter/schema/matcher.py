@@ -25,6 +25,8 @@ def _resolvable(col, present: set, spec: Optional[SchemaSpec] = None) -> bool:
     if col.crosswalk:
         src = next((c for c in spec.all_columns() if c.name == col.crosswalk["from"]), None) if spec else None
         return bool(src) and _resolvable(src, present, spec)
+    if col.from_key:  # the key's own source value: resolvable whenever the key is
+        return _resolvable(spec.tables[col.table].columns[col.from_key], present, spec) if spec else False
     if col.expr:
         return all(normalize_name(i) in present for i in col.inputs)
     return any(n in present for n in col.match_names())

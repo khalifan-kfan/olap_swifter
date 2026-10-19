@@ -16,6 +16,7 @@ import duckdb
 import yaml
 
 from olap_swifter.paths import route
+from olap_swifter.schema.readers import ACCEPTED, EXCEL, as_csv, table_records
 from olap_swifter.schema.spec import normalize_type
 
 DICTIONARY_FIELD_ALIASES = {
@@ -34,7 +35,7 @@ def _sql_str(value: str) -> str:
 def profile_csv(path: str, conn: Optional[duckdb.DuckDBPyConnection] = None,
                 max_categories: int = 0, min_category_count: int = 5) -> Dict[str, Any]:
     """
-    Aggregate-only EDA of a CSV file. With `max_categories` > 0, low-cardinality
+    Aggregate-only EDA of a CSV file (or an Excel sheet, `book.xlsx#Sheet`). With `max_categories` > 0, low-cardinality
     text variables also list their category counts; labels seen fewer than
     `min_category_count` times are pooled as suppressed, so rare values that
     could identify a person never appear.
@@ -42,7 +43,7 @@ def profile_csv(path: str, conn: Optional[duckdb.DuckDBPyConnection] = None,
     own = conn is None
     conn = conn or duckdb.connect()
     try:
-        rel = f"read_csv_auto({_sql_str(path)}, sample_size=-1)"
+        rel = f"read_csv_auto({_sql_str(as_csv(path))}, sample_size=-1)"
         info = conn.execute(f"DESCRIBE SELECT * FROM {rel}").fetchall()
         total = conn.execute(f"SELECT COUNT(*) FROM {rel}").fetchone()[0]
         variables = []
@@ -107,8 +108,8 @@ def _split_values(raw: Any) -> Optional[List[str]]:
     return [text.strip()]
 
 
-CATALOGUE_SUFFIXES = (".csv", ".yaml", ".yml")
-EDA_SUFFIXES = (".yaml", ".yml", ".json", ".csv")
+CATALOGUE_SUFFIXES = ACCEPTED["catalogue"]
+EDA_SUFFIXES = ACCEPTED["eda"]
 
 # Minimal CSV EDA: one row per variable. Headers are matched loosely; only
 # `variable` is needed. `categories` is "label:count|label:count".
@@ -135,9 +136,8 @@ def _num(raw: Any) -> Any:
 
 
 def _load_eda_csv(path: Path) -> Dict[str, Any]:
-    """Reads a minimal CSV EDA into the same shape `profile_csv` produces."""
-    with open(path, newline="", encoding="utf-8-sig") as fh:
-        rows = list(csv.DictReader(fh))
+    """Reads a minimal CSV or Excel EDA (one row per variable) into the shape `profile_csv` produces."""
+    rows = table_records(path, header_hint=EDA_CSV_FIELD_ALIASES["name"] if path.suffix.lower() in EXCEL else None)
     lower = lambda r: {str(k).strip().lower(): v for k, v in r.items() if k}  # noqa: E731
     variables, row_count = [], None
     for raw in rows:
@@ -223,16 +223,20 @@ def _merge_files(path: str, suffixes, load_one) -> Dict[str, Any]:
             key = v["name"].strip().lower()
             if key not in by_name:
                 by_name[key] = {**v, "files": []}
+                if "row_count" in one:
+                    by_name[key].setdefault("rows", one["row_count"])
             by_name[key]["files"].append(f.stem)  # = the data file it describes
     return {"path": str(path), "files": parts, "column_count": len(by_name), "variables": list(by_name.values())}
 
 
 def load_dictionary(path: str) -> Dict[str, Any]:
     """
-    Reads a data dictionary (CSV, or YAML list/mapping) into the same variable
-    shape as a profile. Column headers are matched loosely (variable/name/field,
-    description/label, type/data_type, values/codes, units). A folder is read
-    as several dictionaries of one dataset, merged by variable name.
+    Reads a data dictionary into the same variable shape as a profile: CSV,
+    YAML (list or mapping), Excel (every sheet), or the tables of a Word or PDF
+    document (only tables whose header has a variable/name column). Column
+    headers are matched loosely (variable/name/field, description/label,
+    type/data_type, values/codes, units). A folder is read as several
+    dictionaries of one dataset, merged by variable name.
     """
     p = Path(path)
     if p.is_dir():
@@ -245,9 +249,10 @@ def load_dictionary(path: str) -> Dict[str, Any]:
             rows = [{"name": k, **(v or {})} for k, v in data.items()]
         else:
             rows = list(data or [])
+    elif p.suffix.lower() == ".csv":
+        rows = table_records(p)
     else:
-        with open(p, newline="", encoding="utf-8-sig") as fh:
-            rows = list(csv.DictReader(fh))
+        rows = table_records(p, header_hint=DICTIONARY_FIELD_ALIASES["name"])
 
     variables = []
     for row in rows:
@@ -326,7 +331,7 @@ def load_eda(path: str) -> Dict[str, Any]:
     """
     Reads an EDA (Exploratory Data Analysis) file. EDAs produced by
     `profile_csv` (YAML/JSON with `variables`), ydata-profiling JSON reports
-    and minimal CSV EDAs (one row per variable) contribute statistics to
+    and minimal CSV or Excel EDAs (one row per variable) contribute statistics to
     matching; any other EDA format is accepted and recorded, for the skill to
     read, but adds no statistics.
     A folder holds one EDA per data file; their variables are merged by name.
@@ -336,7 +341,7 @@ def load_eda(path: str) -> Dict[str, Any]:
         raise FileNotFoundError(f"EDA not found: {path}")
     if p.is_dir():
         return _merge_files(path, EDA_SUFFIXES, load_eda)
-    if p.suffix.lower() == ".csv":
+    if p.suffix.lower() in (".csv",) + EXCEL:
         return _load_eda_csv(p)
     if p.suffix.lower() in (".yaml", ".yml", ".json"):
         data = yaml.safe_load(p.read_text(encoding="utf-8"))  # YAML is a superset of JSON

@@ -64,12 +64,12 @@ name; the code tools resolve their paths from it, so a move is one edit there.
 | `resources/code_tools/privacy_tools/` | Presidio de-identification (offline; English only). |
 | `results_workspace/review/model_reviewer.html` | The review page. Rewritten after every tool step. Git-ignored. |
 | `results_workspace/` | **The results workspace: everything a run writes.** Outside the skill (see below). `README.md` is its key: the review page link, the folder structure, the decisions made per dataset, the files there now. |
-| `results_workspace/warehouse/` | `warehouse.duckdb` (production) and `warehouse_dummy.duckdb` (dummy): the defaults for `etl`/`check`. |
+| `results_workspace/warehouse/` | `warehouse.duckdb` (production) and `warehouse_dummy.duckdb` (dummy): the defaults for `etl`/`check`. They hold generated keys only (`PAT-000001`…), never a source identifier. |
+| `results_workspace/warehouse/*_staging.duckdb` | **Private.** Beside each warehouse: the staged raw sources (`stg_<source>`, the test oracle) and `_keymap` (source identifier → generated key). Attached as `stg` during loads; never shared, never zipped (unless `--include-data`), hidden from `view`. |
 | `results_workspace/dummy/<schema>/` | Dummy CSV, catalogue and EDA from `synth`. |
-| `results_workspace/datasets/<dataset>/` | The dataset's own outputs: `constellation.md`, `patches/`, `tests/`, notes. |
+| `results_workspace/datasets/<dataset>/` | The dataset's own outputs: `constellation.md`, `patches/`, `scripts/`, `tests/`, `data_issues/<source>.json` (counts, listed in the README for cleaning), `documents_text/` (long source documents as text), notes. |
 | `results_workspace/process_log.jsonl` | One line per tool step (counts only); feeds the review page. |
 | `results_workspace/token_log.jsonl` | One line per `olap-swifter` command: the size of what it printed, in estimated tokens (characters / 4). Feeds the README's token weight. |
-| `results_workspace/experience/` | Past runs and their reports. |
 
 **Where the results workspace lives.** Paths above that start with
 `results_workspace/` are relative to the workspace, which sits outside the
@@ -109,19 +109,33 @@ The user puts the files there (`OLAP_SWIFTER_INPUTS_DIR` overrides
 ```
 results_workspace/inputs/hiv_site_b/
     catalogue/             (required) one or more dictionaries: visits.csv, viral_loads.yaml …
-    data/                  one or more exports: visits.csv, viral_loads.csv …
+    data/                  one or more exports: visits.csv, labs.xlsx …
     eda/                   optional: one EDA per data file, made from data/ if absent
-    codes/                 optional: one file per code list, e.g. regimens.csv, icd10.csv
+    codes/                 optional: one file per code list, e.g. regimens.csv, icd10.xlsx
     documents/             optional: protocol, SOP, report (read only for the concept's answers)
     dataset_concept.yaml   written by describe(...) below
 ```
 
+Accepted files per folder (anything else is reported as not read):
+
+| Folder | Accepted | Notes |
+| :--- | :--- | :--- |
+| `data/` | `.csv` `.xlsx` `.xls` | Every non-empty sheet of a workbook is its own export: `labs.xlsx#Results` (source `<dataset>_labs__Results`); a one-sheet workbook is just `labs.xlsx`. Sheets are converted to hidden all-text CSVs in `data/.sheets/` for the tools. |
+| `eda/` | `.yaml` `.yml` `.json` `.csv` `.xlsx` `.xls` | One per data file, named after it (`visits.yaml`, `labs__Results.xlsx`). |
+| `catalogue/` | `.csv` `.yaml` `.yml` `.xlsx` `.xls` `.docx` `.pdf` | Excel: every sheet. Word and PDF: every table whose header has a variable/name column (tables continuing over a PDF page break are joined). |
+| `codes/` | `.csv` `.yaml` `.yml` `.txt` `.xlsx` `.xls` `.docx` `.pdf` | One code list per file; only entry counts are read. |
+| `documents/` | `.pdf` `.docx` `.txt` `.md` | Read for the concept's answers only. Longer than three pages: extracted to text first (below). |
+
 **EDA (Exploratory Data Analysis)**: a summary of each data file's shape
 without its rows: column types, missing values, ranges, category counts. It is
-how the skill models data it never reads. There are three ways to get one,
-and the tools check for it first:
+how the skill models data it never reads.
 
-1. **The user gives one**: `eda/<data file stem>.yaml|.json|.csv`.
+It is also what the dummy data is shaped by: `synth` reads the attached
+datasets' EDAs so dummy rows have the real null rates, ranges, category
+proportions and entity counts (inside the schema's rules). There are three
+ways to get one, and the tools check for it first:
+
+1. **The user gives one**: `eda/<data file stem>` as `.yaml`, `.json`, `.csv`, `.xlsx` or `.xls`.
 2. **ydata-profiling, in one line**, from the dataset's inputs folder:
 
    ```bash
@@ -136,7 +150,7 @@ and the tools check for it first:
 3. **Nothing**: `describe(...)` makes `eda/<file>.yaml` for every data file
    that has none (aggregates only, small categories suppressed).
 
-An EDA is YAML (what the tools write by default) or a minimal CSV, one row per
+An EDA is YAML (what the tools write by default) or a minimal CSV or Excel sheet, one row per
 variable: `variable,type,rows,missing,missing_pct,distinct,min,max,mean,categories,suppressed_rows`
 (`categories` as `label:count|label:count`; only `variable` is required).
 `source eda <csv> --out eda/file.csv` writes the CSV form.
@@ -153,8 +167,27 @@ Then the dataset concept is one line, with the four answers only the user can gi
 
 It reads every dictionary in `catalogue/`, makes `eda/<file>.yaml` for each data
 file that has none (aggregates only, small categories suppressed), lists every
-file in `codes/` with its entry count (never the codes), and writes
-`dataset_concept.yaml` (the dataset concept). It returns each data file's row and variable counts and its
+file in `codes/` with its entry count (never the codes), lists `documents/`
+with page and word counts, and writes `dataset_concept.yaml` (the dataset
+concept). Files of a type a folder does not accept are returned under
+`unsupported_files`.
+
+**Long source documents.** A document longer than three pages is extracted to
+`results_workspace/datasets/<dataset>/documents_text/<name>.txt`, with
+`===== page N =====` markers, and its entry in the concept's `documents:`
+list links each template field to the pages most likely to answer it:
+
+```yaml
+documents:
+- file: documents/protocol.pdf
+  pages: 42
+  words: 15310
+  text: .../datasets/hiv_site_b/documents_text/protocol.txt
+  concept_links: {study.main_question: [3, 4], privacy: [17], unit_of_analysis.one_row_is: [9]}
+```
+
+Read those pages of the text for the answers, nothing else. Shorter documents
+are read as they are. It returns each data file's row and variable counts and its
 source name, `<dataset>_<file>` (e.g. `hiv_site_b_viral_loads`).
 It prints the required answers still empty. Re-running it keeps what the skill
 has already filled in. Optional answers are flat keywords:
@@ -167,6 +200,7 @@ has already filled in. Optional answers are flat keywords:
 | `main_measures`, `repeated_within_visit` | `unit_of_analysis.*` |
 | `direct_identifiers`, `quasi_identifiers`, `eda_labels_allowed`, `other_languages` | `privacy.*` (`other_languages` → `other_language_vocabulary`) |
 | `known_issues`, `instructions` | `known_issues`, `instructions_for_modeller` |
+| `placement` | `placement`: the user's choice if the dataset overlaps a built schema, `extend`, `own_mart` or `ask_me`. `schema extend` and `schema attach` refuse unless it is `extend`; `schema register` with `own_mart` refuses to reuse another schema's tables. |
 
 The CLI equivalent is `$O source describe hiv_site_b --study ... --main-question ...
 --one-row-is ... --main-event ... --json`. Paths outside the folder are refused.
@@ -239,13 +273,33 @@ $O build --csv results_workspace/dummy/clinical_visit/clinical_visit_synthetic.c
 ```
 
 Dummy data is capped at 400 rows (whole visits; `dummy_max_rows` in
-`resources/config.yaml`). `synth` reports `visits`, `rows` and `capped`;
+`resources/config.yaml`) and shaped by the attached datasets' EDAs
+(`shaped_by_eda_variables` in the result says how many variables it used).
+`synth` reports `visits`, `rows` and `capped`;
 pass `--max-rows N` only when a test needs more volume. The agent reads these
 JSON results, never the dummy CSV.
 
-`etl` and `build --json` exit non-zero on any failed gate or check; `build --json`
-returns counts only (table counts, check totals, failed checks, join distances,
-slice depth). Then run the TEST.md sub-agents against
+Every check has a severity. `error` means the transfer would break (a variable
+unaccounted for, a missing or blank key, a value that cannot be cast, a derived
+value that cannot be computed, an unmapped label, a value that differs between
+source and warehouse): the load is refused and the command exits non-zero.
+`data_issue` means the source itself has a problem (out of range, outside the
+vocabulary, a required value missing, an entity recorded two ways): the load
+goes ahead with the values as recorded, the result lists them under
+`data_issues`, and they are written to `datasets/<dataset>/data_issues/` and
+the README's "Data issues for cleaning". `build --json` returns counts only
+(table counts, check totals, failed checks, join distances, slice depth).
+
+Every dimension key is generated during the load (`generated_keys` in the
+result counts the new ones per dimension); the source identifiers go to the
+key map in the staging database. To query staging and the key map (tests,
+counts only):
+
+```python
+con = duckdb.connect("results_workspace/warehouse/warehouse_dummy.duckdb", read_only=True)
+con.execute("ATTACH 'results_workspace/warehouse/warehouse_dummy_staging.duckdb' AS stg (READ_ONLY)")
+# stg.stg_<source> = raw rows;  stg._keymap(dimension, natural_key, surrogate_key, source_id)
+``` Then run the TEST.md sub-agents against
 `results_workspace/warehouse/warehouse_dummy.duckdb`, and record their result on
 the review page:
 
@@ -279,13 +333,17 @@ dataset's main fact for its coverage check.
 
 Then run the TEST.md sub-agents on `results_workspace/warehouse/warehouse.duckdb`
 (aggregates only) and `log production_tests` their result.
-On a failure: a schema problem → patch with `schema extend`, rerun Step 6, then
-this step; a data problem → report the counts to the user and wait for their
-decision. Repeat until everything passes, then report back once (Step 8).
+On an `error`: fix the schema so it can hold the value as recorded (a schema
+problem → patch with `schema extend`), rerun Step 6, then this step. The ETL is
+usually the longest part, and each dataset has its own issues: write any
+dataset-specific helper in `results_workspace/datasets/<dataset>/scripts/`.
+Data issues need no fix: they are loaded as recorded and reported (README).
+Repeat until everything passes, then report back once (Step 8).
 
 Use the dataset name (or `<dataset>_<file>`) as `--source`; the coverage check
-then uses the dataset's own main fact. `--force` loads despite failed gates. Use it only with the
-user's agreement.
+then uses the dataset's own main fact. `--force` loads despite a failed
+transfer gate. Use it only with the user's agreement: the values it could not
+transfer are lost.
 
 **Step 8 — Report back when it is done:**
 
@@ -304,8 +362,8 @@ The Markdown has a Mermaid diagram with the dataset's tables marked ★ and a
 table per warehouse table showing which datasets feed each column.
 
 The report to the user is this view plus the dummy and production check and
-TEST.md totals, the schema changelog entries made while debugging, and any data
-issues with their counts.
+TEST.md totals, the schema changelog entries made while debugging, and the
+data issues for cleaning from the README, with their counts.
 
 ---
 
@@ -326,9 +384,16 @@ datasets:                             # written by extend / register / attach
   hiv_site_b: {catalogue: ..., eda: ..., main_fact: fact_viral_load, ...}
 changelog: [...]                      # one line per additive change
 tables:
+  dim_regimen:
+    kind: dimension
+    key: regimen_code
+    columns:
+      regimen_code: {type: VARCHAR, role: key, keep_as: regimen}   # a code that means something: the
+                                      # warehouse key is generated, `regimen` keeps the source value
+                                      # (never allowed on a pii key; the attribute is implied, not written)
   dim_patient:
     kind: dimension                   # dimension | fact
-    key: patient_id                   # dimensions only
+    key: patient_id                   # dimensions only; its values become generated keys (PAT-000001)
     links: [dim_other]                # dimensions this table references
     synthetic: {rows: 60}             # dummy-data entity count
     columns:
@@ -430,10 +495,10 @@ registry = SchemaRegistry()
 variables = merge_profile_and_dictionary(load_eda("hiv_eda.yaml"), load_dictionary("hiv_catalogue.csv"))
 print(match_registry(variables, registry)["recommendation"])
 
-spec = registry.get("clinical_visit")
-dummy = write_synthetic_dataset(spec, "results_workspace/dummy/clinical_visit", n_visits=200)
+spec = registry.get("amr_surveillance")   # any registered schema
+dummy = write_synthetic_dataset(spec, "results_workspace/dummy/amr_surveillance", n_visits=200)
 report = WarehouseLoader(duckdb.connect("results_workspace/warehouse/warehouse_dummy.duckdb")).load(
-    spec, dummy["data"], "clinical_visit_dummy", is_synthetic=True)
+    spec, dummy["data"], "amr_surveillance_dummy", is_synthetic=True)
 print(report["preflight"]["all_passed"], report["postload"]["all_passed"])
 ```
 
@@ -455,7 +520,7 @@ result = orch.run_full_pipeline()
 | :--- | :--- |
 | `workspace [--dataset NAME] [--zip [--include-data]]` | Creates the results workspace (outside the skill) and its README, plus a dataset's inputs folder; prints the README and review-page paths to give the user. `--zip` packs it for download. |
 | `source describe <name> --study --main-question --one-row-is --main-event` | `results_workspace/inputs/<name>/dataset_concept.yaml` (the dataset concept; + EDA if missing). Same as `describe(...)`. |
-| `source eda <csv or folder> --out <yaml/csv or folder> [--csv]` | Aggregate-only EDA (small categories suppressed), one per CSV; `.csv`/`--csv` for the minimal CSV form. |
+| `source eda <data file or folder> --out <yaml/csv or folder> [--csv]` | Aggregate-only EDA (small categories suppressed), one per CSV or Excel sheet; `.csv`/`--csv` for the minimal CSV form. |
 | `source values <dataset> <variable> [--by SITE_VAR] [--crosswalk NAME]` | Distinct labels of a vocabulary variable with rows and sites; merges new labels into a crosswalk. |
 | `source match --catalogue C --eda E [--concept D]` | Scores against every schema: `fit` / `extend` / `new_schema`. |
 | `schema list` / `schema show <id>` | Registered schemas. |
@@ -464,8 +529,8 @@ result = orch.run_full_pipeline()
 | `schema extend <patch> --dataset --catalogue --eda [--concept] [--main-fact]` | Additive change in place, then attach. |
 | `schema attach <id> --dataset --catalogue --eda [--concept] [--main-fact]` | Attach a dataset that fits as-is. |
 | `build [--csv C --schema S --source N] [--json]` | ETL + validation, join paths, slices, reviewer page. `--json`: counts only. |
-| `synth <id> [--out-dir] [--visits] [--max-rows]` | Dummy CSV + catalogue + EDA from a schema, capped at 400 rows (default: `results_workspace/dummy/<id>/`). |
-| `etl <id> <csv> --source S [--db DB] [--synthetic] [--force]` | Stage → gates → load → checks. Counts only. DB defaults to the workspace warehouse (dummy one with `--synthetic`). |
+| `synth <id> [--out-dir] [--visits] [--max-rows]` | Dummy CSV + catalogue + EDA from a schema, shaped by the attached datasets' EDAs, capped at 400 rows (default: `results_workspace/dummy/<id>/`). |
+| `etl <id> <csv or xlsx[#sheet]> --source S [--db DB] [--synthetic] [--force]` | Stage (private staging DB) → gates → generated keys → load → checks. Counts only; data issues reported, never blocking. DB defaults to the workspace warehouse (dummy one with `--synthetic`). |
 | `check <id> --source S [--db DB] [--synthetic]` | Re-run all gates and checks for a loaded source. |
 | `constellation [--highlight DATASET] [--out md]` | The one warehouse view, a dataset highlighted (written to the dataset's workspace folder). |
 | `log <stage> --dataset D [--passed N --total M] [--failed] [--note] [--tokens N]` | Record a step the tools cannot see (TEST.md results) on the review page. `--tokens` records the agent's own token use as the host reports it; the README shows the latest. |
@@ -480,44 +545,26 @@ All are `.venv/bin/olap-swifter <command>`, or `.venv/bin/python -m olap_swifter
 
 Each module can be exercised on its own.
 
-### The builder — `DynamicOLAPBuilder`
-Keeps the field inventory shown in the reviewer page. In the schema workflow it
-is filled from the schema (`load_mappings_from_schema`); its keyword-based
-guessing below is only a hint for datasets with no catalogue yet.
+### The field inventory — `DynamicOLAPBuilder`
+Where every raw variable of a staged source goes, from the schema. It is how
+the build proves zero variable loss and what the review page shows.
 
 ```python
-import pandas as pd
+import duckdb
+from olap_swifter.schema.materializer import WarehouseLoader, resolve_source
+from olap_swifter.schema.registry import SchemaRegistry
 from olap_swifter.builder import DynamicOLAPBuilder
 
-df = pd.read_csv("resources/datasets/sample_wide_clinical.csv")
-builder = DynamicOLAPBuilder()
-builder.register_raw_data(df, table_name="raw_clinical_records")
-
-# No column left behind
-all_mapped, missing = builder.verify_no_variable_left_out()
-assert all_mapped is True and len(missing) == 0
-
-# Move a field to a different table
-builder.switch_field("gender", "dim_patient_demographics", new_role="dimension_attribute")
-inv = {f["name"]: f for f in builder.get_field_inventory()}
-assert inv["gender"]["target_table"] == "dim_patient_demographics"
+conn = duckdb.connect()
+spec = SchemaRegistry().get("amr_surveillance")
+report = WarehouseLoader(conn).load(spec, "resources/datasets/sample_amr_clinical.csv", "sample_amr")
+builder = DynamicOLAPBuilder(conn)
+builder.load_mappings_from_schema(spec, resolve_source(spec, conn, report["staging_table"]))
+assert builder.verify_no_variable_left_out_of(report["staging_table"]) == (True, [])
 ```
 
-### The validator — `SemanticDataValidator`
-Checks row counts and metric totals against the raw staging table.
-
-```python
-from olap_swifter.validator import SemanticDataValidator
-
-builder.generate_olap_tables("constellation")
-validator = SemanticDataValidator(conn=builder.conn, raw_table="raw_clinical_records")
-
-sum_res = validator.validate_metric_sum("encounter_cost_ugx", "fact_encounters")
-assert sum_res.passed is True
-
-ref_res = validator.validate_referential_integrity("fact_encounters", "dim_visit", "visit_id")
-assert ref_res.passed is True
-```
+Source-versus-warehouse parity is checked by the loader itself (`value_parity`,
+`measure_sum_parity`, `derived_parity`, `orphan_keys`: see `etl --json`).
 
 ### The cube and slicer — `MedicalCube`, `CubeSlicer`
 Checks multi-dimensional slicing, roll-ups and finding the deepest populated
@@ -529,25 +576,25 @@ from olap_swifter.olap.cube import MedicalCube
 from olap_swifter.profiler.slicer import CubeSlicer
 
 store = MedicalOLAPStore()
-store.populate_synthetic_data(num_visits=200, schema_id="clinical_visit")
+store.populate_synthetic_data(num_visits=200, schema_id="amr_surveillance")
 cube = MedicalCube(conn=store.conn)
 slicer = CubeSlicer(conn=store.conn)
 
-slice_res = cube.slice_and_dice(
-    measures=["COUNT(*) AS visit_count", "SUM(e.encounter_cost_ugx) AS total_cost"],
-    group_by_dimensions=["v.visit_type", "v.age_group"],
-    from_table="dim_visit v",
-    joins=["JOIN fact_encounters e ON v.visit_id = e.visit_id"],
+slice_res = cube.slice_and_dice(   # keys are generated, so joins go through them
+    measures=["COUNT(*) AS result_count", "AVG(a.mic_ug_ml) AS avg_mic"],
+    group_by_dimensions=["a.ast_interpretation", "v.age_group"],
+    from_table="fact_ast_results a",
+    joins=["JOIN dim_visit v ON a.visit_id = v.visit_id"],
 )
 assert len(slice_res) > 0
 
 deep_slices = slicer.dig_deepest_slices(
     base_from_clause=(
-        "fact_encounters e "
-        "JOIN dim_visit v ON e.visit_id = v.visit_id "
+        "fact_ast_results a "
+        "JOIN dim_visit v ON a.visit_id = v.visit_id "
         "JOIN dim_patient p ON v.patient_id = p.patient_id"
     ),
-    candidate_dimensions=["v.visit_type", "v.age_group", "p.gender"],
+    candidate_dimensions=["a.ast_interpretation", "v.age_group", "p.gender"],
     metric_sql="COUNT(*)",
     min_depth=2,
     max_depth=3,
@@ -565,9 +612,9 @@ from olap_swifter.olap.constellation import get_constellation_schema_metadata
 from olap_swifter.profiler.latency import LatencyProfiler
 
 graph = JoinGraph()
-graph.load_from_metadata(get_constellation_schema_metadata("clinical_visit"))
-assert graph.get_join_path("fact_prescriptions", "dim_facility") == \
-    ["fact_prescriptions", "dim_visit", "dim_facility"]
+graph.load_from_metadata(get_constellation_schema_metadata("amr_surveillance"))
+assert graph.get_join_path("fact_ast_results", "dim_facility") == \
+    ["fact_ast_results", "dim_visit", "dim_facility"]
 
 profiler = LatencyProfiler(conn=store.conn)
 profile_res = profiler.profile_query("SELECT COUNT(*) FROM fact_encounters", label="Encounter Count")
@@ -587,12 +634,6 @@ Everything at once:
 Or one module at a time:
 
 ```bash
-# Legacy keyword builder on the sample datasets
-.venv/bin/pytest -v resources/code_tools/olap_swifter/tests/test_dynamic_datasets.py
-
-# Zero variable loss and semantic validation
-.venv/bin/pytest -v resources/code_tools/olap_swifter/tests/test_builder_and_validator.py
-
 # Cube slicing, roll-ups and pivots
 .venv/bin/pytest -v resources/code_tools/olap_swifter/tests/test_cube.py
 
@@ -602,9 +643,19 @@ Or one module at a time:
 # The full end-to-end pipeline
 .venv/bin/pytest -v resources/code_tools/olap_swifter/tests/test_orchestrator.py
 
-# Schema workflow: registry, match, extend, dummy data, ETL gates, constellation view
+# Schema workflow: registry, match, extend, generated keys, data issues, keep_as, crosswalks, constellation
 .venv/bin/pytest -v resources/code_tools/olap_swifter/tests/test_schema_workflow.py
+
+# Full transfer and inputs: Excel/Word/text inputs, long documents, derived and value parity,
+# EDA-shaped dummy data, the user's placement, staging never shared, data issues in the README
+.venv/bin/pytest -v resources/code_tools/olap_swifter/tests/test_transfer_and_inputs.py
+
+# The results workspace: location, README, zip, token weight
+.venv/bin/pytest -v resources/code_tools/olap_swifter/tests/test_workspace.py
 ```
+
+The tests run in a throwaway root, on one fixture schema (`tests/fixtures/schemas/amr_surveillance.yaml`);
+they never touch your registry or workspace.
 
 ---
 
@@ -612,13 +663,11 @@ Or one module at a time:
 
 | File | Rows | Columns | Schema |
 | :--- | :--- | :--- | :--- |
-| `sample_wide_clinical.csv` | 158 | 26 | `clinical_visit` (`fit`) |
 | `sample_amr_clinical.csv` | 200 | 22 | `amr_surveillance` (`fit`) |
 
-Both samples match their schemas but **fail the preflight gates**, and they
-should: the generator that made them randomised values that ought to be stable.
+The sample matches its schema and loads, but reports **data issues**, and it
+should: the generator that made it randomised values that ought to be stable.
 
 - `sample_amr_clinical.csv`: 49 of 60 patients have more than one gender; every patient has more than one home district.
-- `sample_wide_clinical.csv`: `prior_antibiotic_use_30d` and `substance_use_history` differ between rows of the same visit (28 and 32 visits); `drug_cost_ugx` has two values for the same visit and drug (12 cases).
 
-Use them to see the gates work. Use `synth` for a clean end-to-end run.
+Use it to see data issues reported. Use `synth` for a clean end-to-end run.

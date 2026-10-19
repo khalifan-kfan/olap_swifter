@@ -3,14 +3,16 @@
 # One per dataset, kept in its inputs folder in the results workspace:
 #
 #   results_workspace/inputs/<dataset name>/
-#       catalogue/             (required) one or more data dictionaries (.csv / .yaml / .yml)
-#       data/                  one or more raw CSV exports; only the code tools open them
+#       catalogue/             (required) data dictionaries: .csv .yaml .yml .xlsx .xls, or tables in .docx .pdf
+#       data/                  raw exports: .csv .xlsx .xls (each sheet is one); only the code tools open them
 #       eda/                   one EDA (Exploratory Data Analysis: column types, missing values,
-#                              ranges, category counts, no rows) per data file. Give your own,
-#                              make one with ydata-profiling (HOW_TO_RUN.md), or leave it empty:
-#                              it is made from data/ when missing
-#       codes/                 code lists / vocabularies, one file each
-#       documents/             protocol, SOP, report (read only for this file's answers)
+#                              ranges, category counts, no rows) per data file: .yaml .yml .json
+#                              .csv .xlsx .xls. Give your own, make one with ydata-profiling
+#                              (HOW_TO_RUN.md), or leave it empty: it is made from data/ when
+#                              missing. It also shapes the dummy data.
+#       codes/                 code lists / vocabularies, one file each: .csv .yaml .yml .txt .xlsx .xls .docx .pdf
+#       documents/             protocol, SOP, report: .pdf .docx .txt .md (read only for this file's answers;
+#                              longer than three pages -> extracted to text first, see `documents` below)
 #       dataset_concept.yaml   this file
 #
 # Write it in one line (paths are found in the folder; the EDA is made if missing):
@@ -46,6 +48,10 @@ unit_of_analysis:
   main_measures: []         # variables that are summed, averaged or counted (if known)
   repeated_within_visit: [] # variables with several values per visit (if known)
 
+documents: []               # written by describe: each source document's pages and words; one longer
+                            # than three pages also gets `text` (the extracted text) and `concept_links`
+                            # (template field -> the pages most likely to answer it). Read those pages only.
+
 codes_and_vocabularies: []  # code-list files in <inputs>/<name>/codes/, one entry each:
                             # - {variable: diagnosis_code, system: ICD-10, file: codes/icd10.csv}
 
@@ -63,14 +69,20 @@ known_issues: ""            # recoding history, missing periods, site difference
 instructions_for_modeller: ""   # anything the skill must respect, e.g.
                                 #   "treat regimen as a dimension, not an attribute"
 
+placement: ""               # if the dataset overlaps a schema already built, should it EXTEND that schema
+                            # (share its tables) or be its OWN data mart? extend | own_mart | ask_me
+                            # (ask_me: the agent shows the match result and asks before modelling).
+                            # The agent never decides this alone; `schema extend` / `attach` refuse without extend.
+
 # ============ Filled by the skill (leave empty) ============
 # Modelled from the catalogue, the EDA and the registry match, following the
-# visit-spine rules in SKILL.md. Required before the dataset is attached.
+# visit (encounter) spine rules in SKILL.md. Required before the dataset is attached.
 
-visit:
+visit:                      # the visit, or encounter: one contact during which events happen
   identifier: ""            # variable holding the visit id, or how it is derived,
-                            #   e.g. "patient_id + visit_date"
-  definition: ""            # what counts as one visit in this dataset
+                            #   e.g. "patient_id + visit_date". In the warehouse every
+                            #   visit gets a generated key; this one stays in the private key map
+  definition: ""            # what counts as one visit (encounter) in this dataset
   date_variable: ""
 
 entities:                   # who/what the rows describe -> dimensions

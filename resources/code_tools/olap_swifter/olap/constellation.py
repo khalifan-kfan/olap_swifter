@@ -9,7 +9,8 @@ from typing import Any, Dict, Optional
 from olap_swifter.schema.registry import SchemaRegistry
 
 
-def get_constellation_schema_metadata(schema_id: str = "clinical_visit",
+def get_constellation_schema_metadata(schema_id: Optional[str] = None,
                                       registry: Optional[SchemaRegistry] = None) -> Dict[str, Any]:
-    """Relationships and join keys of a registered schema, in the shape JoinGraph expects."""
-    return (registry or SchemaRegistry()).get(schema_id).metadata()
+    """Relationships and join keys of a registered schema (default: the only one), in the shape JoinGraph expects."""
+    registry = registry or SchemaRegistry()
+    return registry.get(registry.default_id(schema_id)).metadata()

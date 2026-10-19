@@ -18,7 +18,7 @@ from olap_swifter.feedback.worklog import STAGES, log_step
 from olap_swifter.paths import make_workspace, route, workspace_path, zip_workspace
 from olap_swifter.schema.constellation_view import build_view, render_markdown
 from olap_swifter.schema.describe import describe
-from olap_swifter.schema.extender import attach_dataset, extend_schema
+from olap_swifter.schema.extender import attach_dataset, extend_schema, placement_of, require_user_placement
 from olap_swifter.schema.matcher import match_registry
 from olap_swifter.schema.materializer import WarehouseLoader, source_id_for
 from olap_swifter.schema.checks import run_checks
@@ -26,6 +26,7 @@ from olap_swifter.schema.profile import (
     load_description, load_dictionary, load_eda, merge_profile_and_dictionary, profile_csv, write_eda,
 )
 from olap_swifter.schema.registry import SchemaRegistry, default_inputs_dir
+from olap_swifter.schema.readers import ACCEPTED, data_entries, entry_stem
 from olap_swifter.schema.vocabulary import VocabularyError, crosswalk_path, label_counts, merge_crosswalk
 from olap_swifter.schema.spec import SchemaSpecError, load_spec_file
 from olap_swifter.schema.synthetic import write_synthetic_dataset
@@ -164,6 +165,15 @@ def schema_register(
     _require(eda, "EDA", as_json)
     reg = SchemaRegistry()
     try:
+        if placement_of(description) == "own_mart":  # its own mart shares no table with another schema
+            new = load_spec_file(path)
+            owners = reg.table_owners()
+            shared = sorted(t for t in new.tables if t in owners and new.schema_id not in owners[t])
+            if shared:
+                raise SchemaSpecError(
+                    f"the user chose its own data mart (placement: own_mart), but this schema reuses "
+                    f"{', '.join(shared)} from other schemas; give the mart its own tables "
+                    f"(e.g. {shared[0]}_{dataset}) or ask the user again")
         reg.register(Path(path))
         spec = reg.get(load_spec_file(path).schema_id)
         out = _attach_and_save(spec, dataset, catalogue, eda, description, main_fact)
@@ -187,7 +197,7 @@ def schema_extend(
     _require(catalogue, "catalogue", as_json)
     _require(eda, "EDA", as_json)
     try:
-        spec = extend_schema(patch)
+        spec = extend_schema(patch, concept=description)
         out = _attach_and_save(spec, dataset, catalogue, eda, description, main_fact)
     except (SchemaSpecError, KeyError, yaml.YAMLError) as e:
         _fail(str(e), as_json)
@@ -210,6 +220,7 @@ def schema_attach(
     _require(catalogue, "catalogue", as_json)
     _require(eda, "EDA", as_json)
     try:
+        require_user_placement(description, schema_id, "attach the dataset to")
         out = _attach_and_save(SchemaRegistry().get(schema_id), dataset, catalogue, eda, description, main_fact)
     except (SchemaSpecError, KeyError) as e:
         _fail(str(e), as_json)
@@ -227,15 +238,15 @@ def source_eda(
     as_csv: bool = typer.Option(False, "--csv", help="With a folder: write minimal CSV EDAs instead of YAML"),
     as_json: bool = typer.Option(False, "--json"),
 ):
-    """Writes aggregate-only EDA (counts, ranges, category counts with small cells hidden) for a CSV or a folder of CSVs."""
+    """Writes aggregate-only EDA (counts, ranges, category counts with small cells hidden) for a CSV or Excel file, or a folder of them."""
     _require(csv_path, "CSV", as_json)
     cfg = SchemaRegistry().config()
     src = Path(csv_path)
     ext = ".csv" if as_csv else ".yaml"
-    targets = [(f, Path(out) / f"{f.stem}{ext}") for f in sorted(src.glob("*.csv"))] if src.is_dir() \
-        else [(src, Path(out))]
+    targets = [(str(src / e), Path(out) / f"{entry_stem(e)}{ext}") for e in data_entries(src)] if src.is_dir() \
+        else [(str(src), Path(out))]
     if not targets:
-        _fail(f"no CSV files in {csv_path}", as_json)
+        _fail(f"no data files ({', '.join(ACCEPTED['data'])}) in {csv_path}", as_json)
     written = []
     for data_file, eda_path in targets:
         eda = profile_csv(str(data_file), max_categories=int(cfg["eda_max_categories"]),
@@ -252,11 +263,13 @@ def source_describe(
     main_question: str = typer.Option("", help="The primary analysis the warehouse must answer"),
     one_row_is: str = typer.Option("", help="What one row of the export represents"),
     main_event: str = typer.Option("", help="The event counted or measured (becomes the main fact)"),
+    placement: str = typer.Option("", help="The user's choice if it overlaps a built schema: extend | own_mart | ask_me"),
     as_json: bool = typer.Option(False, "--json"),
 ):
     """Writes inputs/<name>/dataset_concept.yaml (and the EDA if missing). Same as `describe(...)`."""
     try:
-        result = describe(name, study, main_question, one_row_is, main_event, quiet=True)
+        extra = {"placement": placement} if placement else {}
+        result = describe(name, study, main_question, one_row_is, main_event, quiet=True, **extra)
     except (FileNotFoundError, ValueError) as e:
         _fail(str(e), as_json)
     log_step("describe", not result["missing_required"], name, data_files=len(result["data_files"]),
@@ -274,7 +287,7 @@ def source_values(
 ):
     """Distinct labels of a vocabulary variable (ward, unit, specimen...) with counts, for a crosswalk."""
     folder = default_inputs_dir() / dataset
-    files = sorted(str(f) for f in (folder / "data").glob("*.csv"))
+    files = [str(folder / "data" / e) for e in data_entries(folder / "data")]
     if not files:
         _fail(f"no data files in {folder / 'data'}", as_json)
     try:

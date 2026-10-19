@@ -16,7 +16,7 @@ from olap_swifter.schema.materializer import WarehouseLoader
 from olap_swifter.schema.registry import SchemaRegistry
 from olap_swifter.schema.synthetic import write_synthetic_dataset
 
-DEFAULT_SCHEMA = "clinical_visit"
+DEFAULT_SCHEMA = None  # the only registered schema (SchemaRegistry.default_id)
 
 
 class MedicalOLAPStore:
@@ -29,9 +29,10 @@ class MedicalOLAPStore:
         self.loader = WarehouseLoader(self.conn)
         self.last_load: Optional[Dict[str, Any]] = None
 
-    def populate_synthetic_data(self, num_visits: int = 1000, schema_id: str = DEFAULT_SCHEMA,
+    def populate_synthetic_data(self, num_visits: int = 1000, schema_id: Optional[str] = DEFAULT_SCHEMA,
                                 seed: int = 7) -> Dict[str, Any]:
-        """Generates dummy data for a registered schema and loads it through the normal ETL."""
+        """Generates dummy data for a registered schema (default: the only one) and loads it through the ETL."""
+        schema_id = self.registry.default_id(schema_id)
         spec = self.registry.get(schema_id)
         with tempfile.TemporaryDirectory() as tmp:
             out = write_synthetic_dataset(spec, tmp, n_visits=num_visits, seed=seed,

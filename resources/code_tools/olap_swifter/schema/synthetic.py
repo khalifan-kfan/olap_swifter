@@ -3,7 +3,10 @@ Schema-Driven Synthetic Data.
 Generates a dummy wide CSV that looks like a raw export for any schema, so the
 model and the ETL can be proven end to end before real data is touched.
 
-Values come only from the spec (allowed codes, ranges, types). Entities are
+Values come from the spec (allowed codes, ranges, types), shaped by the
+attached datasets' EDAs when there are any (null rates, ranges, category
+proportions, entity counts) — the EDA is what makes dummy data look like the
+real export without reading it. Entities are
 generated once and reused, so dimension attributes stay consistent per key,
 and visits with several fact rows repeat their other values across rows the
 way real flat exports do — which exercises the loader's de-duplication.
@@ -37,9 +40,18 @@ def _to_date(v: Any) -> date:
 
 
 class SyntheticGenerator:
-    def __init__(self, spec: SchemaSpec, seed: int = 7):
+    """
+    Dummy rows for a schema. With an EDA (the attached datasets' aggregate
+    profiles), each raw variable follows its real shape: null rate, numeric
+    and date range, category labels in their proportions, and entity pool
+    sizes scaled from distinct counts. The schema still rules: values stay
+    inside its allowed codes and ranges, so dummy data obeys it by construction.
+    """
+
+    def __init__(self, spec: SchemaSpec, seed: int = 7, eda: Optional[Dict[str, Dict[str, Any]]] = None):
         self.spec = spec
         self.rng = random.Random(seed)
+        self.eda = {k.lower(): v for k, v in (eda or {}).items()}
         self.pools: Dict[str, List[Dict[str, Any]]] = {}
         # Raw-label columns read by a crosswalk draw their values from its general
         # (unscoped) entries, so dummy data exercises the mapping.
@@ -50,34 +62,69 @@ class SyntheticGenerator:
                 values = [e["value"] for e in xw["entries"] if e["maps_to"] and not e["scope"]]
                 if values:
                     self.label_values.setdefault(c.crosswalk["from"], []).extend(values)
+        # Typed raw columns anywhere in the schema: an expression input of the same name takes their type.
+        self.typed = {c.name: c for c in spec.all_columns() if not c.expr and not c.crosswalk and not c.from_key}
 
     # ---------- values ----------
 
+    def _stats(self, col: ColumnSpec) -> Dict[str, Any]:
+        for n in [col.name] + list(col.aliases or []):
+            v = self.eda.get(str(n).lower())
+            if v:
+                return v.get("stats") or {}
+        return {}
+
     def _key(self, col: ColumnSpec, i: int) -> Any:
+        if col.allowed:
+            return col.allowed[(i - 1) % len(col.allowed)]
+        cats = list((self._stats(col).get("categories") or {}).keys())
+        if cats and not col.pii:
+            return cats[(i - 1) % len(cats)] if i <= len(cats) else f"{cats[(i - 1) % len(cats)]}-{i}"
         if col.type == "BIGINT":
             return i
         prefix = col.name.upper().replace("_ID", "").replace("_", "")[:6] or "ID"
         # Schema tag keeps dummy sets of different schemas from sharing keys.
         return f"{self.spec.schema_id[:3].upper()}-{prefix}-{i:05d}"
 
+    def _bounds(self, col: ColumnSpec, st: Dict[str, Any], default):
+        """The schema range narrowed to the EDA's observed range (the schema wins on conflict)."""
+        lo, hi = col.range or (None, None)
+        e_lo, e_hi = st.get("min"), st.get("max")
+        num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)  # noqa: E731
+        if num(e_lo):
+            lo = e_lo if lo is None else max(lo, e_lo)
+        if num(e_hi):
+            hi = e_hi if hi is None else min(hi, e_hi)
+        lo = default[0] if lo is None else lo
+        hi = default[1] if hi is None else hi
+        return (lo, hi) if lo <= hi else tuple(col.range or default)
+
     def value(self, col: ColumnSpec, allow_null: bool = True) -> Any:
         r = self.rng
-        if allow_null and not col.required and r.random() < NULL_RATE:
+        st = self._stats(col)
+        null_rate = float(st["null_pct"]) / 100 if st.get("null_pct") is not None else NULL_RATE
+        if allow_null and not col.required and r.random() < null_rate:
             return None
         if col.name in self.label_values:
             return r.choice(self.label_values[col.name])
+        cats = st.get("categories") or {}
         if col.allowed:
+            weights = [float(cats.get(str(a), 0)) for a in col.allowed]
+            if sum(weights) > 0:
+                return r.choices(col.allowed, weights)[0]
             return r.choice(col.allowed)
+        if cats and col.type == "VARCHAR" and not col.pii:
+            return r.choices(list(cats), [float(n) for n in cats.values()])[0]
         if col.type == "BOOLEAN":
             return r.choice([True, False])
         if col.type == "DOUBLE":
-            lo, hi = col.range or (0, 100)
-            return round(r.uniform(float(lo if lo is not None else 0), float(hi if hi is not None else 100)), 2)
+            lo, hi = self._bounds(col, st, (0, 100))
+            return round(r.uniform(float(lo), float(hi)), 2)
         if col.type == "BIGINT":
-            lo, hi = col.range or (0, 100)
-            return r.randint(int(lo if lo is not None else 0), int(hi if hi is not None else 100))
+            lo, hi = self._bounds(col, st, (0, 100))
+            return r.randint(int(lo), int(hi))
         if col.type in ("DATE", "TIMESTAMP"):
-            lo, hi = col.range or DEFAULT_DATE_RANGE
+            lo, hi = col.range or (st.get("min") or DEFAULT_DATE_RANGE[0], st.get("max") or DEFAULT_DATE_RANGE[1])
             lo_d, hi_d = _to_date(lo), _to_date(hi)
             d = lo_d + timedelta(days=r.randint(0, max(0, (hi_d - lo_d).days)))
             if col.type == "DATE":
@@ -85,17 +132,30 @@ class SyntheticGenerator:
             return f"{d.isoformat()} {r.randint(0, 23):02d}:{r.randint(0, 59):02d}:00"
         return f"{col.name}_{r.randint(1, 6)}"
 
-    def _row_values(self, cols: List[ColumnSpec]) -> Dict[str, Any]:
-        """Raw-variable values for a set of columns (expr columns emit their inputs)."""
+    def _input_value(self, col: ColumnSpec, name: str) -> Any:
+        """A raw input of an expression: typed like a schema column or the EDA variable of that name."""
+        if name in self.typed:
+            return self.value(self.typed[name], allow_null=False)
+        st = (self.eda.get(name.lower()) or {})
+        if st.get("type"):
+            probe = ColumnSpec(name=name, table=col.table, type=st["type"], role="attribute")
+            return self.value(probe, allow_null=False)
+        if col.input_examples:
+            return self.rng.choice(col.input_examples)
+        return f"{name}_{self.rng.randint(1, 6)}"
+
+    def _row_values(self, cols: List[ColumnSpec], existing: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Raw-variable values for a set of columns: typed columns first, then expression inputs not yet set."""
+        existing = existing or {}
         out: Dict[str, Any] = {}
         for c in cols:
-            if c.crosswalk:
-                continue  # derived in the ETL from its raw-label column
+            if not c.crosswalk and not c.expr and not c.from_key:
+                out[c.name] = self.value(c)
+        for c in cols:
             if c.expr:
                 for name in c.inputs:
-                    out[name] = self.rng.choice(c.input_examples) if c.input_examples else f"{name}_{self.rng.randint(1, 6)}"
-            else:
-                out[c.name] = self.value(c)
+                    if name not in out and name not in existing:
+                        out[name] = self._input_value(c, name)
         return out
 
     # ---------- entities ----------
@@ -115,29 +175,39 @@ class SyntheticGenerator:
             visit(d)
         return order
 
+    def _pool_size(self, dim: TableSpec, n_visits: int) -> int:
+        """Entity count: the YAML's, else scaled from the EDA's distinct counts, else n_visits / 4."""
+        if dim.synthetic.get("rows"):
+            return int(dim.synthetic["rows"])
+        key = dim.columns[dim.key]
+        distinct = self._stats(key).get("distinct_count")
+        rows = next((self.eda[n.lower()].get("rows") for n in [key.name] + list(key.aliases or [])
+                     if n.lower() in self.eda), None)
+        if distinct:
+            if distinct <= 50:          # a small set of entities (facilities, regimens): keep them all
+                return int(distinct)
+            if rows:                    # entities per raw row, applied to the dummy rows (~2 per visit)
+                return max(5, min(n_visits, round(distinct / rows * n_visits * 2)))
+        return max(5, n_visits // 4)
+
     def _build_pools(self, n_visits: int):
         for dim in self._dim_order():
-            if dim.name == self.spec.spine_table:
-                size = n_visits
-            else:
-                size = int(dim.synthetic.get("rows") or max(5, n_visits // 4))
+            size = n_visits if dim.name == self.spec.spine_table else self._pool_size(dim, n_visits)
             key_col = dim.columns[dim.key]
             pool = []
             for i in range(1, size + 1):
                 row = {dim.key: self._key(key_col, i)}
                 for link in dim.links:
-                    if len(self.pools[link]) >= size:
-                        row.update(self.pools[link][i - 1])
-                    else:
-                        row.update(self.rng.choice(self.pools[link]))
+                    src = self.pools[link]
+                    row.update(src[i - 1] if len(src) >= size else self.rng.choice(src))
                 if key_col.expr:
                     for name in key_col.inputs:
                         if name not in row:
-                            row[name] = self.rng.choice(key_col.input_examples) if key_col.input_examples else (
-                                self._key(key_col, i) if name == key_col.inputs[0] else f"{name}_{self.rng.randint(1, 6)}"
-                            )
+                            row[name] = self._input_value(key_col, name)
                 own = [c for c in dim.columns.values() if c.name != dim.key]
-                row.update(self._row_values(own))
+                for k, v in self._row_values(own, existing=row).items():
+                    if k not in (key_col.inputs or []) or k not in row:
+                        row[k] = v
                 pool.append(row)
             self.pools[dim.name] = pool
 
@@ -150,7 +220,8 @@ class SyntheticGenerator:
         picks = {l: self.rng.sample(self.pools[l], min(count, len(self.pools[l]))) for l in links}
         if links:
             count = min([count] + [len(p) for p in picks.values()])
-        rows = []
+        grain = [g for g in fact.grain if g != self.spec.spine_key]
+        rows, seen = [], set()
         for i in range(count):
             row: Dict[str, Any] = {}
             for l in links:
@@ -159,6 +230,10 @@ class SyntheticGenerator:
             if own and all(v is None for v in own.values()):
                 own = self._row_values(list(fact.columns.values()))  # a fact row needs content
             row.update(own)
+            key = tuple(row.get(g) for g in grain)
+            if grain and key in seen:
+                continue  # one row per grain value within a visit
+            seen.add(key)
             rows.append(row)
         return rows
 
@@ -187,7 +262,7 @@ class SyntheticGenerator:
         spine = [t for t in ordered if t.name == self.spec.spine_table]
         for t in spine + [t for t in ordered if t.name != self.spec.spine_table] + self.spec.facts:
             for c in self.spec.table_columns(t):
-                if c.crosswalk:
+                if c.crosswalk or c.from_key:
                     continue
                 for n in (c.inputs if c.expr else [c.name]):
                     if n not in names:
@@ -197,7 +272,7 @@ class SyntheticGenerator:
     def catalogue(self) -> List[Dict[str, Any]]:
         rows, seen = [], set()
         for c in self.spec.all_columns():
-            if c.crosswalk:
+            if c.crosswalk or c.from_key:
                 continue
             if c.expr:
                 for n in c.inputs:
@@ -214,17 +289,36 @@ class SyntheticGenerator:
         return rows
 
 
+def dataset_eda(spec: SchemaSpec) -> Dict[str, Dict[str, Any]]:
+    """Every attached dataset's EDA variables by name (the first dataset's wins on a shared name)."""
+    from olap_swifter.schema.profile import load_eda
+    out: Dict[str, Dict[str, Any]] = {}
+    for ds in (spec.datasets or {}).values():
+        path = (ds or {}).get("eda")
+        if not path or not Path(path).exists():
+            continue
+        try:
+            eda = load_eda(path)
+            for v in eda.get("variables", []):
+                out.setdefault(v["name"], {**v, "rows": v.get("rows") or eda.get("row_count")})
+        except (OSError, ValueError, yaml.YAMLError):
+            continue
+    return out
+
+
 def write_synthetic_dataset(spec: SchemaSpec, out_dir: str, n_visits: int = 200, seed: int = 7,
                             max_categories: int = 20, min_category_count: int = 5,
-                            max_rows: Optional[int] = DEFAULT_MAX_ROWS) -> Dict[str, Any]:
+                            max_rows: Optional[int] = DEFAULT_MAX_ROWS, use_eda: bool = True) -> Dict[str, Any]:
     """
-    Writes `<schema>_synthetic.csv`, its catalogue and its EDA into `out_dir`.
-    At most max_rows rows are written (whole visits only); pass None only when a
-    test genuinely needs more volume. Returns paths and counts, never rows.
+    Writes `<schema>_synthetic.csv`, its catalogue and its EDA into `out_dir`,
+    shaped by the attached datasets' EDAs unless `use_eda` is off. At most
+    max_rows rows are written (whole visits only); pass None only when a test
+    genuinely needs more volume. Returns paths and counts, never rows.
     """
     from olap_swifter.schema.profile import profile_csv
 
-    gen = SyntheticGenerator(spec, seed=seed)
+    shape = dataset_eda(spec) if use_eda else {}
+    gen = SyntheticGenerator(spec, seed=seed, eda=shape)
     rows = gen.generate(n_visits, max_rows=max_rows)
     visits = len({r[spec.spine_key] for r in rows})
     out = Path(out_dir)
@@ -249,4 +343,4 @@ def write_synthetic_dataset(spec: SchemaSpec, out_dir: str, n_visits: int = 200,
 
     return {"schema": spec.ref, "data": str(data_path), "catalogue": str(cat_path), "eda": str(eda_path),
             "visits": visits, "visits_requested": n_visits, "rows": len(rows), "max_rows": max_rows,
-            "capped": visits < n_visits, "columns": len(cols)}
+            "capped": visits < n_visits, "columns": len(cols), "shaped_by_eda_variables": len(shape)}

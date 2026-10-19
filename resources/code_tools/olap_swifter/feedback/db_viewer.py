@@ -35,6 +35,8 @@ th { background:var(--surface); position:sticky; top:0; } .null { color:var(--mu
 def find_databases(extra: Optional[List[Path]] = None) -> List[Path]:
     """Every .duckdb under the workspace, plus any passed explicitly."""
     found = sorted(route("workspace").rglob("*.duckdb")) if route("workspace").exists() else []
+    # The staging databases hold raw rows and the key map to source identifiers: never shown.
+    found = [p for p in found if not p.name.endswith("_staging.duckdb")]
     return list(dict.fromkeys([p.resolve() for p in (extra or []) + found]))
 
 

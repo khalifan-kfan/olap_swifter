@@ -37,7 +37,7 @@ def MedicalOLAPOrchestrator(*args, **kwargs):
 def build(
     visits: int = typer.Option(500, help="Number of synthetic clinical visits to generate (capped at dummy_max_rows rows)"),
     csv: Optional[str] = typer.Option(None, "--csv", help="Path to input raw clinical CSV file"),
-    schema: Optional[str] = typer.Option(None, help="Registered schema id (default: clinical_visit, or the matched schema for --csv)"),
+    schema: Optional[str] = typer.Option(None, help="Registered schema id (default: the only registered one, or the matched schema for --csv)"),
     source: Optional[str] = typer.Option(None, help="Source name for --csv (use the dataset name)"),
     force: bool = typer.Option(False, "--force", help="Load despite failed gates (requires user agreement)"),
     as_json: bool = typer.Option(False, "--json", help="Print a counts-only summary for the orchestrating skill"),
@@ -48,7 +48,7 @@ def build(
         if csv:
             data_stats = orch.ingest_csv_dataset(csv, schema_id=schema, source=source, force=force)
         else:
-            data_stats = orch.ingest_synthetic_dataset(num_visits=visits, schema_id=schema or "clinical_visit")
+            data_stats = orch.ingest_synthetic_dataset(num_visits=visits, schema_id=schema)
         res = orch.run_full_pipeline()
     except ValueError as e:
         from olap_swifter.feedback.worklog import log_step
@@ -108,7 +108,7 @@ def build(
 
 
 @app.command()
-def profile(schema: str = typer.Option("clinical_visit", help="Registered schema id")):
+def profile(schema: Optional[str] = typer.Option(None, help="Registered schema id (default: the only one)")):
     """Profiles join paths, digs out deepest cube slices, and measures component latency."""
     console.print(Panel.fit("[bold magenta]OLAP Join Path, Latency & Deep Cube Slicer Profiling[/bold magenta]"))
     orch = MedicalOLAPOrchestrator()

@@ -87,11 +87,16 @@ class ColumnSpec:
     # Standardised category derived from another column through a crosswalk file:
     # {file: <crosswalks/<file>.yaml>, from: <column with the raw label>, scope: <optional column>}
     crosswalk: Optional[Dict[str, str]] = None
+    # On a dimension key: the attribute that keeps the source's own value (a code
+    # that means something, e.g. a regimen code). The key itself is generated.
+    keep_as: Optional[str] = None
+    # On that attribute: the key it was made from. Implied by keep_as, never written to YAML.
+    from_key: Optional[str] = None
 
     def match_names(self) -> List[str]:
         """Normalized names a raw variable may carry to map onto this column."""
-        if self.crosswalk:
-            return []  # derived from its `from` column, never read directly
+        if self.crosswalk or self.from_key:
+            return []  # derived from another column (its `from` label, or its key), never read directly
         names = [self.name] + list(self.aliases)
         if self.source:
             names.insert(0, self.source)
@@ -100,7 +105,7 @@ class ColumnSpec:
     def to_yaml(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {"type": self.type, "role": self.role}
         for attr in ("description", "aliases", "source", "expr", "inputs", "input_examples",
-                     "required", "allowed", "range", "pii", "crosswalk", "datasets"):
+                     "required", "allowed", "range", "pii", "crosswalk", "keep_as", "datasets"):
             val = getattr(self, attr)
             if val not in (None, "", [], False):
                 out[attr] = val
@@ -134,7 +139,7 @@ class TableSpec:
             out["grain"] = list(self.grain)
         if self.synthetic:
             out["synthetic"] = dict(self.synthetic)
-        out["columns"] = {c.name: c.to_yaml() for c in self.columns.values()}
+        out["columns"] = {c.name: c.to_yaml() for c in self.columns.values() if not c.from_key}
         return out
 
 
@@ -301,6 +306,7 @@ def _parse_column(table: str, name: str, raw: Dict[str, Any]) -> ColumnSpec:
         pii=bool(raw.get("pii", False)),
         datasets=list(raw.get("datasets") or []),
         crosswalk=xw,
+        keep_as=str(raw["keep_as"]) if raw.get("keep_as") else None,
     )
 
 
@@ -323,6 +329,13 @@ def parse_spec(data: Dict[str, Any]) -> SchemaSpec:
         if kind not in KINDS:
             raise SchemaSpecError(f"{t_name}: kind must be 'dimension' or 'fact'")
         cols = {c: _parse_column(t_name, c, c_raw) for c, c_raw in (t_raw.get("columns") or {}).items()}
+        for key_col in [c for c in cols.values() if c.keep_as]:
+            if key_col.keep_as in cols:
+                raise SchemaSpecError(f"{t_name}.{key_col.name}: keep_as '{key_col.keep_as}' is already a column")
+            cols[key_col.keep_as] = ColumnSpec(
+                name=key_col.keep_as, type=key_col.type, role="attribute", table=t_name,
+                description=f"The source's own {key_col.name}, kept (the key is generated)",
+                allowed=key_col.allowed, datasets=list(key_col.datasets), from_key=key_col.name)
         tables[t_name] = TableSpec(
             name=t_name, kind=kind, columns=cols,
             key=t_raw.get("key"),
@@ -382,6 +395,11 @@ def validate_spec(spec: SchemaSpec) -> List[str]:
             elif t[link].is_fact:
                 errors.append(f"{tbl.name}: may only link to dimensions, not '{link}'")
         for c in tbl.columns.values():
+            if c.keep_as and (tbl.is_fact or c.name != tbl.key):
+                errors.append(f"{tbl.name}.{c.name}: keep_as is only for a dimension's own key")
+            if c.keep_as and c.pii:
+                errors.append(f"{tbl.name}.{c.name}: a person identifier (pii) is never kept in the warehouse; "
+                              "remove keep_as, or pii if this is a code that means something")
             if c.role == "key" and (tbl.is_fact or c.name != tbl.key):
                 errors.append(f"{tbl.name}.{c.name}: role 'key' is only for a dimension's own key "
                               "(reference other dimensions through 'links')")

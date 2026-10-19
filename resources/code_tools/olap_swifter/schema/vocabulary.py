@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 import duckdb
 import yaml
 
+from olap_swifter.schema.readers import as_csv, split_sheet
 from olap_swifter.schema.profile import load_description
 from olap_swifter.schema.spec import CROSSWALK_DIR, normalize_label, normalize_name
 
@@ -57,7 +58,7 @@ def label_counts(data_files: List[str], variable: str, by: Optional[str] = None,
     parts, used = [], []
     try:
         for f in data_files:
-            rel = f"read_csv_auto({_sql_str(f)}, all_varchar=true, sample_size=-1)"
+            rel = f"read_csv_auto({_sql_str(as_csv(f))}, all_varchar=true, sample_size=-1)"
             cols = [r[0] for r in conn.execute(f"DESCRIBE SELECT * FROM {rel}").fetchall()]
             col = _find(cols, variable)
             if col is None:
@@ -65,7 +66,7 @@ def label_counts(data_files: List[str], variable: str, by: Optional[str] = None,
             by_col = _find(cols, by) if by else None
             by_sql = f'NULLIF(TRIM("{by_col}"), \'\')' if by_col else "NULL"
             parts.append(f'SELECT NULLIF(TRIM("{col}"), \'\') AS label, {by_sql} AS scope FROM {rel}')
-            used.append(Path(f).name)
+            used.append(Path(split_sheet(f)[0]).name)
         if not parts:
             raise VocabularyError(f"no data file has a variable named {variable!r}")
         union = " UNION ALL ".join(parts)

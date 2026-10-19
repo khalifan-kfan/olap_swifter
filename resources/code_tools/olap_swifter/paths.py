@@ -167,6 +167,45 @@ def _dataset_sections(ws: Path) -> List[str]:
     return lines
 
 
+# What each data issue means and how it could be cleaned. The warehouse holds
+# the source as recorded; cleaning is the data owner's decision.
+CLEANING = {
+    "value_range": "values outside the schema's plausible range (typos, sentinels such as -1)",
+    "allowed_values": "values outside the vocabulary (spelling or case variants, retired codes)",
+    "required_nulls": "a required variable left empty",
+    "entity_consistency": "one entity recorded with different values (only the first is on the dimension)",
+}
+
+
+def _data_issue_sections(ws: Path) -> List[str]:
+    """Every dataset's data issues from its last load of each source, counts only."""
+    import json
+    outputs = route("dataset_outputs")
+    files = sorted(outputs.glob("*/data_issues/*.json")) if outputs.is_dir() else []
+    lines: List[str] = []
+    for f in files:
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        kind = "dummy" if rec.get("synthetic") else "real"
+        issues = rec.get("issues") or []
+        lines += [f"### {rec.get('dataset')} — source `{rec.get('source_id')}` ({kind} data, {rec.get('recorded_at')})", ""]
+        if not issues:
+            lines += ["No data issues.", ""]
+            continue
+        lines += ["| issue | where | rows | what it is |", "| :--- | :--- | ---: | :--- |"]
+        for i in issues:
+            lines.append(f"| {i.get('check')} | `{i.get('target')}` | {i.get('actual')} | "
+                         f"{CLEANING.get(i.get('check'), i.get('detail') or '')} |")
+        lines.append("")
+    if not lines:
+        return ["None recorded yet.", ""]
+    return (["The source is transferred as it is: these values are in the warehouse exactly as recorded. "
+             "They are listed for the data owner to clean at the source, not fixed here. Counts only; "
+             "each load of a source rewrites its entry.", ""] + lines)
+
+
 CHARS_PER_TOKEN = 4
 
 # The skill's documents the agent reads, by route.
@@ -266,6 +305,7 @@ def write_workspace_readme() -> Path:
              "- **Add a dataset:** `olap-swifter workspace --dataset <name>` makes its inputs folder.", "",
              "## Datasets and the decisions made for them", ""]
     lines += _dataset_sections(ws)
+    lines += ["## Data issues for cleaning", ""] + _data_issue_sections(ws)
     lines += ["## Token weight", ""] + _token_weight()
     lines += ["## Standing decisions", ""] + [f"- {d}" for d in STANDING_DECISIONS] + [""]
     lines += ["## Folder structure", ""] + _structure(ws)
@@ -305,9 +345,10 @@ def make_workspace(dataset: Optional[str] = None) -> Dict[str, str]:
 def zip_workspace(out: Optional[str] = None, include_data: bool = False) -> Dict[str, Any]:
     """
     Zips the results workspace for download (when the run has no folder the
-    user keeps, e.g. a chat). Raw exports in inputs/<dataset>/data/ are left
-    out unless `include_data`: the user already has them. The warehouses go
-    in, and they hold the loaded data.
+    user keeps, e.g. a chat). Raw exports in inputs/<dataset>/data/ and the
+    private staging databases (raw rows and the key map to source identifiers)
+    are left out unless `include_data`: the user already has them. The
+    warehouses go in; they hold the loaded data under generated keys.
     """
     ws = route("workspace")
     write_workspace_readme()
@@ -318,7 +359,8 @@ def zip_workspace(out: Optional[str] = None, include_data: bool = False) -> Dict
             rel = p.relative_to(ws)
             if not p.is_file() or p.name == ".DS_Store" or "__pycache__" in rel.parts or p.resolve() == target.resolve():
                 continue
-            if not include_data and len(rel.parts) > 2 and rel.parts[0] == "inputs" and rel.parts[2] == "data":
+            if not include_data and ((len(rel.parts) > 2 and rel.parts[0] == "inputs" and rel.parts[2] == "data")
+                                     or p.name.endswith("_staging.duckdb")):
                 skipped += 1
                 continue
             zf.write(p, Path(ws.name) / rel)

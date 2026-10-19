@@ -8,6 +8,7 @@ Presidio can redact ordinary local terms as names and miss names it does not
 recognise. Vocabulary recorded in another language (the description's
 privacy.other_language_vocabulary) is passed as keep_terms and never redacted;
 names written in that language still need a person to check them.
+TODO: create an offline luganda model to help with personal identification
 """
 
 import re

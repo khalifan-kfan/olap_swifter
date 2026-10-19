@@ -1,35 +1,31 @@
-"""
-End-to-end integration test for MedicalOLAPOrchestrator.
-"""
+"""End-to-end test of MedicalOLAPOrchestrator on the AMR schema's dummy data."""
+
+from pathlib import Path
 
 import pytest
+
 from olap_swifter.orchestrator import MedicalOLAPOrchestrator
-from pathlib import Path
+from olap_swifter.schema.registry import SchemaRegistry
 
 
 def test_full_orchestration_pipeline():
     orch = MedicalOLAPOrchestrator()
-    data_stats = orch.ingest_synthetic_dataset(num_visits=100)
-
-    assert data_stats["num_visits"] == 100
-    assert data_stats["raw_records_generated"] > 0
+    stats = orch.ingest_synthetic_dataset(num_visits=100)  # the only registered schema
+    assert stats["num_visits"] == 100 and stats["raw_records_generated"] > 0
 
     res = orch.run_full_pipeline()
-
-    # 1. Zero variable loss
-    assert res["zero_variable_loss"] is True
-    assert len(res["missing_variables"]) == 0
-    assert res["total_variables"] > 10
-
-    # 2. Semantic validation
+    assert res["zero_variable_loss"] is True and res["missing_variables"] == []
     assert res["semantic_validation"]["total_tests"] > 0
-
-    # 3. Join path analysis
-    assert "fact_encounters" not in res["join_analysis"]
+    assert res["semantic_validation"]["failed"] == 0
+    assert "fact_ast_results" not in res["join_analysis"]  # paths are measured from the main fact
     assert "dim_facility" in res["join_analysis"]
-
-    # 4. Deepest cube slices
     assert res["deepest_slices_count"] > 0
-
-    # 5. Interactive reviewer HTML
     assert Path(res["reviewer_html"]).exists()
+
+
+def test_default_schema_needs_a_single_registered_schema(tmp_path):
+    empty = SchemaRegistry(tmp_path)
+    with pytest.raises(KeyError, match="no schema registered"):
+        empty.default_id()
+    assert SchemaRegistry().default_id() == "amr_surveillance"
+    assert SchemaRegistry().default_id("x") == "x"
