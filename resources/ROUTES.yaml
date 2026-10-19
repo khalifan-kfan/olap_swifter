@@ -41,10 +41,10 @@ routes:
   warehouses:       {path: results_workspace/warehouse, committed: false, what: "The DuckDB warehouses (open read-only with `olap-swifter view`)"}
   warehouse:        {path: results_workspace/warehouse/warehouse.duckdb, committed: false, what: "Production warehouse (real data)"}
   warehouse_dummy:  {path: results_workspace/warehouse/warehouse_dummy.duckdb, committed: false, what: "Dummy warehouse (proving a schema)"}
+  staging:          {path: results_workspace/warehouse/warehouse_staging.duckdb, committed: false, what: "PRIVATE: staged raw rows (the test oracle) and the key map from source identifiers to generated keys; never shared (warehouse_dummy_staging.duckdb beside it for dummy data)"}
   dummy_data:       {path: results_workspace/dummy, committed: false, what: "Dummy CSV, catalogue and EDA per schema: dummy/<schema>/"}
   dataset_outputs:  {path: results_workspace/datasets, committed: false, what: "Per dataset: constellation.md, patches/, scripts/ (ETL and processing scripts), tests/, notes"}
   token_log:        {path: results_workspace/token_log.jsonl, committed: false, what: "Size of every CLI command's output, in estimated tokens; feeds the README's token weight"}
   process_log:      {path: results_workspace/process_log.jsonl, committed: false, what: "Every tool step (counts only); feeds the review page"}
   model_reviewer:   {path: results_workspace/review/model_reviewer.html, committed: false, what: "Review page: schema art, process done so far, field mapping, checks. Rewritten by the tools after every step"}
   review:           {path: results_workspace/review, committed: false, what: "Last build summary and UI screenshots behind the review page"}
-  experience:       {path: results_workspace/experience, committed: false, what: "Past runs and reports the skill has learned from"}

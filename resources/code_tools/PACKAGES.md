@@ -11,8 +11,8 @@ vulnerabilities** after the upgrades noted below.
 
 | Package | Floor (pyproject) | Installed | Used by | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| duckdb | >=0.10.0 | 1.5.6 | `olap_swifter` (builder, olap, profiler, schema, validator, schema_cli) | Warehouse engine |
-| pandas | >=2.0.0 | 3.0.6 | `olap_swifter` (builder, olap, profiler, validator) | |
+| duckdb | >=0.10.0 | 1.5.6 | `olap_swifter` (builder, olap, profiler, schema, schema_cli) | Warehouse engine |
+| pandas | >=2.0.0 | 3.0.6 | `olap_swifter` (builder, olap, profiler) | |
 | networkx | >=3.1 | 3.6.1 | `olap_swifter/profiler` | Join paths |
 | PyYAML | >=6.0 | 6.0.3 | `olap_swifter` (paths, schema, schema_cli) | Always `yaml.safe_load`; never `yaml.load` |
 | typer | >=0.9.0 | 0.27.3 | `olap_swifter` (cli, schema_cli) | CLI |

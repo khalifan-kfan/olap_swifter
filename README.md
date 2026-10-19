@@ -20,11 +20,15 @@ This skill reads a file like that and splits it into a proper warehouse:
 
 - **Dimensions** — the things being described (patients, facilities, drugs, tests).
 - **Facts** — the things that happened or were measured (costs, stays, lab results).
-- **The visit spine** — the central `dim_visit` table that ties every fact back
-  to the encounter it happened in.
+- **The visit (encounter) spine** — the central `dim_visit` table that ties
+  every fact back to the visit, or encounter, it happened in.
 
-Then it checks its own work. Every column must survive the split, every fact row
-must link to a visit, and every total must still match the original file.
+It transfers the source in full: every value arrives as recorded, nothing is
+cleaned on the way, and problems in the source are listed for cleaning instead.
+Every key in the warehouse is generated (`PAT-000001`), so no patient or
+facility identifier from the source is ever in it. Then it checks its own work.
+Every column and value must survive the split, every fact row must link to a
+visit, and every total must still match the original file.
 
 ---
 
@@ -111,7 +115,7 @@ Check the warehouse totals still match the raw file
 You can also name it directly if it does not activate on its own:
 
 ```
-Use the medical-olap-orchestrator skill on resources/datasets/sample_wide_clinical.csv
+Use the medical-olap-orchestrator skill on resources/datasets/sample_amr_clinical.csv
 ```
 
 ### Step 4 — Let it work through the five steps
@@ -201,13 +205,17 @@ registry starts empty, so the first dataset is modelled as a new schema.
 
 ## The guarantees
 
-1. **Zero variable loss.** Every raw column lands in a dimension or a fact.
-   Nothing is quietly dropped.
-2. **A visit for every fact.** No orphan rows — every clinical event links back
+1. **Zero variable loss, full transfer.** Every raw column lands in a dimension
+   or a fact, and every value arrives as recorded (cast or derived by a stated
+   rule, derived features checked against the original). Nothing is quietly
+   dropped or cleaned; source problems are listed in the results README.
+2. **Generated keys.** Patients, facilities and visits get keys made by the
+   ETL; the source identifiers stay in a private key map beside the warehouse.
+3. **A visit for every fact.** No orphan rows — every clinical event links back
    to the encounter it happened in.
-3. **The numbers still add up.** Sums, averages, row counts and group
+4. **The numbers still add up.** Sums, averages, row counts and group
    distributions on the warehouse match the raw file within float tolerance.
-4. **No fan-out inflation.** Joining fact tables through the visit spine does
+5. **No fan-out inflation.** Joining fact tables through the visit (encounter) spine does
    not multiply rows or overstate totals.
 
 ---
@@ -223,6 +231,9 @@ and uses this repo's `privacy_tools` for Presidio.
 ---
 
 ## TODO: AI Misuse Risks and Docker
+
+- [ ] **AI misuse implementation plan:** turn each risk below into an enforced control (a tool refusal,
+  a review gate or an audit-log entry), with an owner, a test that proves it fires, and a date.
 
 ### 1. Risks of AI Misuse & Clinical Governance
 Automating OLAP aggregation with AI introduces high-stakes risks that require strict operational guardrails:
