@@ -30,7 +30,8 @@ user, and explain one the first time it comes up.
   birth, village, a rare condition, a very small facility.
 - **Small cell** — a category with so few rows (under 5 by default) that its
   count could point to a person. The tools pool small cells as "suppressed".
-- **Presidio** — the de-identification library the OCR tools use; English only.
+- **Presidio** — the offline de-identification library in `privacy_tools`; it
+  masks names, phone numbers and IDs in text. English only.
 
 **The warehouse**
 

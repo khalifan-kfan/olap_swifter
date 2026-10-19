@@ -12,9 +12,7 @@ routes:
   # ---- Instructions ----
   how_to_run:       {path: resources/instructions/HOW_TO_RUN.md, committed: true, what: "Every command, file path and file format"}
   terms:            {path: resources/instructions/TERMS.md, committed: true, what: "What every term means (crosswalk, grain, gate, patch...)"}
-  ocr_guide:        {path: resources/instructions/OCR.md, committed: true, what: "OCR pipeline (separate from the warehouse)"}
-  ocr_assets:       {path: resources/instructions/ocr_assets, committed: true, what: "OCR diagram and sample scanned forms"}
-  routes:           {path: resources/ROUTES.yaml, committed: true, what: "This file"}
+  routes:          {path: resources/ROUTES.yaml, committed: true, what: "This file"}
 
   # ---- Generic settings and templates (no dataset-specific content) ----
   config:           {path: resources/config.yaml, committed: true, what: "Thresholds: match difference, EDA privacy, dummy row cap"}
@@ -26,8 +24,10 @@ routes:
   code_tools:       {path: resources/code_tools, committed: true, what: "Python packages, Dockerfile, pyproject"}
   packages:         {path: resources/code_tools/PACKAGES.md, committed: true, what: "Every third-party package, where it is used, and its last security audit"}
   olap_tools:       {path: resources/code_tools/olap_swifter, committed: true, what: "Warehouse: schema registry, ETL, checks, cube, reviewer, CLI"}
-  ocr_tools:        {path: resources/code_tools/ocr_tools, committed: true, what: "OCR: preprocessing, Tesseract, handwriting, field parsing, Docker runner"}
-  privacy_tools:    {path: resources/code_tools/privacy_tools, committed: true, what: "Presidio de-identification (used by OCR)"}
+  privacy_tools:    {path: resources/code_tools/privacy_tools, committed: true, what: "Presidio de-identification; shared with the linked medical OCR skill"}
+
+  # ---- Linked skills (beside this repo, not part of it) ----
+  ocr_skill:        {path: ../medical_ocr_skill, committed: false, what: "Medical OCR: scanned paper forms to de-identified rows that come in here as a dataset. Its own SKILL.md, TEST.md, HOW_TO_RUN.md"}
 
   # ---- Results workspace: everything a run writes (never committed) ----
   # Lives outside the skill: $OLAP_SWIFTER_WORKSPACE, else results_workspace/

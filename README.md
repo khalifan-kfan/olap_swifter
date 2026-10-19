@@ -175,13 +175,12 @@ olap_swifter/
 ├── docker-compose.yml        # Run the code tools in a container
 ├── resources/
 │   ├── ROUTES.yaml           # Routing key: where every resource lives, by name
-│   ├── instructions/         # HOW_TO_RUN.md, OCR.md, ocr_assets/ (diagrams, sample forms)
+│   ├── instructions/         # HOW_TO_RUN.md, TERMS.md
 │   ├── config.yaml           # Generic thresholds (match, EDA privacy, dummy cap)
 │   ├── templates/            # Dataset concept template
 │   ├── datasets/             # Sample CSVs for the tool tests (git-ignored)
 │   └── code_tools/
 │       ├── olap_swifter/     # Warehouse: schema, ETL, checks, cube, reviewer, CLI, tests
-│       ├── ocr_tools/        # OCR: preprocessing, Tesseract, handwriting, parsing
 │       └── privacy_tools/    # Presidio de-identification
 └── results_workspace/        # Results workspace (git-ignored); README.md is its key
     ├── inputs/<name>/        # Your datasets: catalogue/, data/, eda/, codes/, documents/, dataset_concept.yaml
@@ -213,20 +212,20 @@ registry starts empty, so the first dataset is modelled as a new schema.
 
 ---
 
-## TODO: OCR Pipeline Implementation & AI Misuse Risks
+## Linked skill: medical OCR
 
-### 1. Implementing the OCR Pipeline (`ocr_tools/` & `privacy_tools/`)
-The repository contains scaffolding for `TesseractRunner`, `preprocessor.py`, and `OfflinePresidioAnonymizer`. To bring physical paper form digitization into production:
-- **Image Preprocessing (`ocr_tools/preprocessor.py`)**: Implement deskewing, contrast enhancement (CLAHE), adaptive binarization, and shadow removal to handle degraded paper records from clinic settings.
-- **Structured Form Layout Parsing**: Replace raw text dump with zone/table detection (bounding box segmentation for Patient Header, Diagnosis blocks, and AST Lab sensitivity grids).
-- **Automated Redaction & Privacy (`privacy_tools/presidio_engine.py`)**: Gate raw OCR outputs through local Presidio de-identification to strip direct identifiers (patient names, phone numbers, village addresses) before staging.
-- **Pipeline Integration**: Ingest sanitized OCR output directly into the DuckDB staging table (`raw_clinical_records`) to seamlessly trigger the dynamic constellation builder.
+Paper records are handled by a separate skill beside this repo,
+[`../medical_ocr_skill`](../medical_ocr_skill/README.md). It turns scanned
+clinical forms into de-identified rows, which come into this skill as an
+ordinary dataset. It has its own `SKILL.md`, `TEST.md` and `HOW_TO_RUN.md`,
+and uses this repo's `privacy_tools` for Presidio.
 
-### 2. Risks of AI Misuse & Clinical Governance
-Automating medical digitization and OLAP aggregation with AI introduces high-stakes risks that require strict operational guardrails:
-- **Dosage & Metric Hallucinations (Silent Data Corruption)**:
-  - OCR and generative models can easily misread or hallucinate handwritten decimals and dosages (e.g., misreading `0.5g` as `5g`, or flipping AST interpretation `S` to `R`). In surveillance warehouses, this produces dangerously distorted resistance curves.
-  - *Guardrail*: Always enforce deterministic regex range checks (e.g., physiological vital boundaries, standard antimicrobial dosage tiers) and require human-in-the-loop (HITL) verification for low-confidence reads.
+---
+
+## TODO: AI Misuse Risks and Docker
+
+### 1. Risks of AI Misuse & Clinical Governance
+Automating OLAP aggregation with AI introduces high-stakes risks that require strict operational guardrails:
 - **Misapplication to Real-Time Clinical Decision Support**:
   - `olap_swifter` is designed for **retrospective epidemiological research and health system reporting**, NOT real-time diagnostic triage or autonomous drug prescribing.
   - *Guardrail*: Outputs must never be fed directly into active bedside treatment algorithms without direct clinician review.
@@ -236,13 +235,10 @@ Automating medical digitization and OLAP aggregation with AI introduces high-sta
 - **Re-Identification of Vulnerable Populations**:
   - Even without direct names, high-dimensional OLAP slicing combining facility + rare diagnosis + exact visit date + age group can re-identify marginalized patients (e.g., HIV, MDR-TB, stigmatized conditions).
   - *Guardrail*: Enforce k-anonymity thresholds ($k \ge 5$) on cube rollups and suppress small cell counts before exporting reports.
-- **Adversarial Input & Prompt Injection**:
-  - Scanned clinical notes containing malicious or unintended text instructions could compromise downstream LLM-based orchestrators.
-  - *Guardrail*: Treat all OCR output strictly as raw data payloads; never pass raw scanned text directly as system prompt instructions.
 
-### 3. Docker Compose Setup for the Skills (Next Iteration)
+### 2. Docker Compose Setup for the Skills (Next Iteration)
 Testing the skill today depends on a local `.venv`, a system DuckDB, and the machine-specific paths in `HOW_TO_RUN.md`. That makes results hard to reproduce across contributors and CI. For the next iterations:
 - **`docker-compose.yml` at the repo root**: One service that installs `resources/code_tools`, mounts the repo (inputs and `results_workspace/` included), and exposes the `olap_swifter.cli` entry point (`build`, `profile`, `review`).
 - **One-command test run**: `docker compose run --rm olap pytest -v` should execute the full suite against a clean container, so sub-agents in `TEST.md` can be run without touching the host environment.
-- **Pin the toolchain**: Lock Python, DuckDB and (later) Tesseract/Presidio versions in the image so the OCR pipeline from item 1 can be tested in the same container.
+- **Pin the toolchain**: Lock Python, DuckDB and Presidio versions in the image.
 - **Update `HOW_TO_RUN.md`**: Replace the absolute `/Users/...` paths with container paths and add a "Run with Docker" section alongside the `.venv` instructions.

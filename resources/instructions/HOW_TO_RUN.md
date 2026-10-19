@@ -61,8 +61,7 @@ name; the code tools resolve their paths from it, so a move is one edit there.
 | `resources/datasets/` | Sample CSVs used by the tests (opened only by the code tools). Git-ignored. |
 | `resources/code_tools/olap_swifter/schema/` | Registry, matcher, extender, loader (ETL), dummy data, checks, constellation view. |
 | `resources/code_tools/olap_swifter/` | The rest of the warehouse package (cube, profiler, reviewer, process log, CLI) and `tests/`. |
-| `resources/code_tools/ocr_tools/` | OCR, kept separate from the warehouse (see [OCR.md](OCR.md)). |
-| `resources/code_tools/privacy_tools/` | Presidio de-identification, used by OCR. |
+| `resources/code_tools/privacy_tools/` | Presidio de-identification (offline; English only). |
 | `results_workspace/review/model_reviewer.html` | The review page. Rewritten after every tool step. Git-ignored. |
 | `results_workspace/` | **The results workspace: everything a run writes.** Outside the skill (see below). `README.md` is its key: the review page link, the folder structure, the decisions made per dataset, the files there now. |
 | `results_workspace/warehouse/` | `warehouse.duckdb` (production) and `warehouse_dummy.duckdb` (dummy): the defaults for `etl`/`check`. |
@@ -472,7 +471,6 @@ result = orch.run_full_pipeline()
 | `log <stage> --dataset D [--passed N --total M] [--failed] [--note] [--tokens N]` | Record a step the tools cannot see (TEST.md results) on the review page. `--tokens` records the agent's own token use as the host reports it; the README shows the latest. |
 | `profile [--schema]` | Join paths, deepest cube slices, latency. |
 | `review [--dataset]` / `verify-ui` | Re-render the review page / Playwright check of it. |
-| `ocr <image>` | OCR + de-identification (see [OCR.md](OCR.md); kept separate from the warehouse for now). |
 
 All are `.venv/bin/olap-swifter <command>`, or `.venv/bin/python -m olap_swifter.cli <command>`.
 

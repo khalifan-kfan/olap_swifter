@@ -5,8 +5,8 @@ real) through the schema ETL, then validate, profile joins, slice the cube and
 render the reviewer. Every table name, join and dimension comes from the
 schema YAML, so the pipeline is the same for AMR, HIV or any other study.
 
-OCR (the separate ocr_tools package) is deliberately not wired in here yet; it will feed the
-warehouse later as another data source.
+OCR lives in a separate, linked skill (../medical_ocr_skill) and is deliberately not wired in
+here; its de-identified output will feed the warehouse later as another data source.
 """
 
 from typing import Any, Dict, List, Optional

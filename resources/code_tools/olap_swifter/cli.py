@@ -1,7 +1,8 @@
 """
 CLI interface for olap_swifter.
 Schema workflow (schema/source/synth/etl/check/constellation) lives in schema_cli;
-this module adds pipeline profiling, the reviewer UI, Playwright verification and OCR.
+this module adds pipeline profiling, the reviewer UI and Playwright verification.
+OCR is a separate, linked skill (../medical_ocr_skill) with its own `medical-ocr` command.
 """
 
 import json
@@ -177,32 +178,6 @@ def verify_ui(switch_field: Optional[str] = typer.Option(None, help="Field to sw
         console.print(f"[yellow]Playwright run notice: {result.get('error')}[/yellow]")
         if "hint" in result:
             console.print(f"  Hint: {result['hint']}")
-
-
-@app.command()
-def ocr(
-    image: str = typer.Argument(..., help="Path to clinical form image or scan"),
-    cursive: bool = typer.Option(True, help="Enable tail-end cursive & handwriting recognition"),
-    anonymize: bool = typer.Option(True, help="Enable Presidio patient PII & contact redaction")
-):
-    """Executes OCR layer: Tesseract + Tail-end Cursive HTR + Presidio privacy + Structured field extraction."""
-    from ocr_tools.tesseract_runner import TesseractRunner
-    console.print(Panel.fit(f"[bold cyan]Clinical OCR Extraction & De-Identification[/bold cyan]\nImage: [yellow]{image}[/yellow]"))
-    runner = TesseractRunner()
-    result = runner.process_full_pipeline(image, run_cursive=cursive, anonymize=anonymize)
-
-    console.print(f"[bold green]Engine:[/bold green] {result['engine']}")
-
-    # Presidio De-Identified Text
-    console.print(Panel(result["anonymized_text"], title="[bold blue]Presidio De-Identified Text (Facility Preserved)[/bold blue]"))
-
-    # Extracted Fields Table
-    table = Table(title="Extracted Clinical Fields (Visit Spine)")
-    table.add_column("Field", style="cyan")
-    table.add_column("Extracted Value", style="magenta")
-    for k, v in result["fields"].items():
-        table.add_row(k, str(v))
-    console.print(table)
 
 
 if __name__ == "__main__":
