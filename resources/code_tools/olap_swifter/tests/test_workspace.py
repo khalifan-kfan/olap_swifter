@@ -23,6 +23,12 @@ def test_workspace_is_made_in_the_users_folder_outside_the_skill(tmp_path, monke
     assert route("inputs") == tmp_path / "elsewhere" / "inputs"
 
 
+def test_workspace_run_from_inside_the_skill_lands_beside_it(isolated_root, monkeypatch):
+    monkeypatch.delenv("OLAP_SWIFTER_WORKSPACE", raising=False)
+    monkeypatch.chdir(isolated_root / "resources")
+    assert workspace_root() == isolated_root.resolve().parent / "results_workspace"
+
+
 def test_readme_is_the_results_key(tmp_path, monkeypatch):
     monkeypatch.setenv("OLAP_SWIFTER_WORKSPACE", str(tmp_path / "ws"))
     out = make_workspace("hiv_site_b")

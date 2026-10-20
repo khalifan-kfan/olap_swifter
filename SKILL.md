@@ -32,8 +32,8 @@ own folder there. Never write outputs into the skill's folder or `resources/`.
 
 - **In a working folder** (a terminal or IDE session): create the results workspace in the user's
   folder, not inside the skill: run the tools from that folder, or point them at another
-  (HOW_TO_RUN.md). Only when the user is working inside the skill's own repo does it land there,
-  git-ignored.
+  (HOW_TO_RUN.md). Run from inside the skill's own folder, the tools put it beside the skill,
+  never in it.
 - **In a chat with no folder the user keeps:** build it in the session's working space, and at the
   end hand the whole workspace over for download — a zip (the workspace tool's zip option), or an
   artifact if the chat offers one. Say what is in it; the raw exports are left out unless asked for.

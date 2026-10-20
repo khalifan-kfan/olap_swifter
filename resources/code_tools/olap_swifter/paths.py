@@ -45,18 +45,18 @@ def routes() -> Dict[str, Dict[str, Any]]:
 
 def workspace_root() -> Path:
     """
-    The results workspace: $OLAP_SWIFTER_WORKSPACE; else, run from the user's
-    own working folder, `results_workspace/` in that folder (outside the
-    skill); else (run from inside the skill, or with $OLAP_SWIFTER_ROOT set)
-    the git-ignored `results_workspace/` in the skill repo.
+    The results workspace, always outside the skill: $OLAP_SWIFTER_WORKSPACE;
+    else `results_workspace/` in the folder the tools are run from; else (run
+    from inside the skill) `results_workspace/` beside the skill's folder.
     """
     env = os.environ.get("OLAP_SWIFTER_WORKSPACE")
     if env:
         return Path(env).resolve()
     name = routes()["workspace"]["path"]
-    if os.environ.get("OLAP_SWIFTER_ROOT") or _root_from_cwd():
-        return repo_root() / name
-    return Path.cwd() / name
+    skill, cwd = repo_root().resolve(), Path.cwd().resolve()
+    if cwd == skill or skill in cwd.parents:
+        return skill.parent / name
+    return cwd / name
 
 
 def _split_workspace(path: str) -> Tuple[bool, str]:

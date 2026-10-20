@@ -78,8 +78,8 @@ skill:
 1. `$OLAP_SWIFTER_WORKSPACE`, when set;
 2. else `results_workspace/` in the folder the tools are run from, when that
    folder is not inside the skill (the usual case: the user's own project);
-3. else (run from inside this repo, or with `OLAP_SWIFTER_ROOT` set)
-   `results_workspace/` in the repo, git-ignored.
+3. else (run from inside the skill) `results_workspace/` beside the skill's
+   folder, never in it.
 
 ```bash
 cd ~/my_project && /path/to/olap_swifter/.venv/bin/olap-swifter workspace --dataset hiv_site_b

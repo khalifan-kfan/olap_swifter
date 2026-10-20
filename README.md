@@ -186,17 +186,18 @@ olap_swifter/
 │   └── code_tools/
 │       ├── olap_swifter/     # Warehouse: schema, ETL, checks, cube, reviewer, CLI, tests
 │       └── privacy_tools/    # Presidio de-identification
-└── results_workspace/        # Results workspace (git-ignored); README.md is its key
-    ├── inputs/<name>/        # Your datasets: catalogue/, data/, eda/, codes/, documents/, dataset_concept.yaml
-    ├── schemas/              # The live schema registry + crosswalks/, built from your datasets
-    ├── warehouse/            # The output DuckDB files
-    └── ...                   # dummy data, per-dataset outputs, process log, past runs
+
+results_workspace/            # Results workspace, outside the skill; README.md is its key
+├── inputs/<name>/            # Your datasets: catalogue/, data/, eda/, codes/, documents/, dataset_concept.yaml
+├── schemas/                  # The live schema registry + crosswalks/, built from your datasets
+├── warehouse/                # The output DuckDB files
+└── ...                       # dummy data, per-dataset outputs, process log, past runs
 ```
 
 Nothing under `resources/` is about a particular dataset: it is the skill's
-tools, instructions and generic settings. The results workspace is shown here
-as it lands when you run the tools from inside this repo; run them from your
-own project folder and it is created there instead. **Your datasets go in
+tools, instructions and generic settings. The results workspace never lands
+inside the skill: run the tools from your own project folder and it is created
+there; run them from inside this repo and it is created beside it. **Your datasets go in
 `results_workspace/inputs/<name>/`**, and the schemas built from them live in
 `results_workspace/schemas/`. None of it is ever committed. On a fresh clone the
 registry starts empty, so the first dataset is modelled as a new schema.
